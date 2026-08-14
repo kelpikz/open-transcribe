@@ -66,7 +66,7 @@ const PY_FLOAT_NUMBER = new RegExp(
  * inf/infinity/nan — exactly as `float(...)` does; throws for anything
  * else, exactly as `float(...)` raises `TypeError`/`ValueError`.
  */
-function pyFloat(value: unknown): number {
+export function pyFloat(value: unknown): number {
   if (typeof value === "number") return value; // NaN round-trips, like float('nan')
   if (typeof value === "boolean") return value ? 1 : 0;
   if (typeof value === "string") {

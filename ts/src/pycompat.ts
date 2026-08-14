@@ -43,3 +43,17 @@ export function codepointSlice(s: string, end: number): string {
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
+
+/**
+ * Keep only the last `n` Unicode code points of a string, as Python's
+ * `s[-n:]` does.
+ *
+ * Used by `Renderer.delta()` in `cli.ts` to keep the live line to one
+ * terminal row. JavaScript's `.slice(-n)` counts UTF-16 code units and can
+ * split an astral character's surrogate pair in half; this counts code
+ * points instead, matching Python string indexing (mirrors `codepointSlice`
+ * above, but anchored to the end of the string rather than the start).
+ */
+export function codepointSliceLast(s: string, n: number): string {
+  return Array.from(s).slice(-n).join("");
+}
