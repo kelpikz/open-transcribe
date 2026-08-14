@@ -15,9 +15,16 @@ optional `language` field. The Python CLI now follows that route. The old
 `realtime.py` implementation remains only as legacy protocol reference; do not
 assume its WebRTC negotiation can be verified against the service.
 
-For the TypeScript port, decide whether the target is the working Desktop
-dictation route (`transcribe.ts`) or the legacy realtime module. Do not claim
-that `/codex/realtime/calls` is the route used by the current Desktop mic.
+**Decision: port both.** `transcribe.ts` is the working path and what `cli.ts`
+uses. `realtime.ts` is ported as a second backend behind the same
+`TranscriptionBackend` interface in `contract.ts`, so it is ready if that
+endpoint returns. Do not claim that `/codex/realtime/calls` is the route used
+by the current Desktop mic, and do not try to find its replacement.
+
+**The `/transcribe` route is itself unverified.** An attempt to exercise it
+failed before reaching the network, because `~/.codex/auth.json` currently has
+no ChatGPT access token. Treat "this route works" as reported, not proven. Do
+not write tests that require it.
 
 ## Rules
 
@@ -57,6 +64,16 @@ of how the tool behaves. Your TS tests must assert against these files.
 | `event_dispatch.json` | 13 synthetic streams, all branches |
 | `renderer.json` | byte-exact stderr across 6 terminal modes |
 | `args_ok.json` / `args_err.json` | 21 argv cases + 5 error cases |
+| `content_type_for.json` | 19 paths → MIME, incl. case and unknown extensions |
+| `transcribe_constants.json` | upload-route constants |
+| `transcribe_requests.json` | request construction across 5 language values |
+| `transcription_headers.json` | Desktop header set + the drop-empty filter |
+| `cli_stream_refusal.json` | `--stream` exit code and message |
+
+All fixtures were regenerated after the pivot to the upload route. The
+original eleven came back **byte-identical** — the pivot was purely additive,
+so `Renderer`, `build_session`, event dispatch, transcript assembly and every
+parser default are unchanged and their fixtures remain authoritative.
 
 ## Findings that change how you write the code
 

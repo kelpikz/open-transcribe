@@ -84,6 +84,38 @@ export type OnDelta = (delta: string) => void;
 export type OnFinal = (text: string) => void;
 export type OnEvent = (event: RealtimeEvent) => void;
 
+// ------------------------------------------------------- transcribe (upload)
+// The route Codex Desktop's composer mic actually uses: POST one complete
+// recording as multipart to {base}/transcribe, get one final transcript back.
+// No streaming, no partials, no protocol events.
+
+export interface TranscribeOptions {
+  filename: string;
+  content_type: string;
+  /**
+   * Falsy or "auto" omits the form field entirely, letting the service
+   * detect. Matches Python's `if not language or language == "auto"`.
+   */
+  language?: string | null;
+}
+
+/** The only field consumed from the response body. */
+export interface TranscribeResponse {
+  text: string;
+}
+
+/**
+ * The seam that lets both backends coexist, per the port-both decision.
+ *
+ * `transcribe.ts` implements it by upload (working route). `realtime.ts`
+ * implements it by accumulating WebRTC segments (legacy, endpoint currently
+ * 404s). cli.ts selects one and must not care which.
+ */
+export interface TranscriptionBackend {
+  transcribeAudio(data: Uint8Array, options: TranscribeOptions): Promise<string>;
+  transcribeFile(path: string, options?: { language?: string | null }): Promise<string>;
+}
+
 // ------------------------------------------------------------------ audio
 /**
  * The seam that makes the future desktop app cheap.

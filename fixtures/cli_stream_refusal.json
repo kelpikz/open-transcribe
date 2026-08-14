@@ -1,0 +1,17 @@
+[
+  {
+    "argv": [
+      "--stream"
+    ],
+    "exit_code": 2,
+    "stderr": "--stream is unavailable: the Codex Desktop upload route returns one final transcript.\n"
+  },
+  {
+    "argv": [
+      "file.wav",
+      "--stream"
+    ],
+    "exit_code": 2,
+    "stderr": "--stream is unavailable: the Codex Desktop upload route returns one final transcript.\n"
+  }
+]

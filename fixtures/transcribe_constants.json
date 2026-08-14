@@ -1,0 +1,10 @@
+{
+  "TRANSCRIBE_URL_SUFFIX": "/transcribe",
+  "DEFAULT_LANGUAGE": "en",
+  "DEFAULT_MODEL": "gpt-4o-transcribe",
+  "TRANSCRIBE_MODELS": [
+    "gpt-4o-transcribe",
+    "gpt-4o-mini-transcribe",
+    "whisper-1"
+  ]
+}

@@ -425,6 +425,112 @@ def gen_args() -> None:
     dump("args_err", out_err)
 
 
+# ------------------------------------------------------------ transcribe route
+def gen_transcribe() -> None:
+    """The /transcribe upload route: MIME mapping and request construction."""
+    from codex_audio import transcribe as tr
+
+    ext_cases = [
+        "a.wav", "a.WAV", "a.mp3", "a.m4a", "a.mp4", "a.webm", "a.weba",
+        "a.ogg", "a.oga", "a.flac", "a.aac",
+        "a.opus", "a.aiff", "a.txt", "a.bin", "noextension",
+        "dotted.name.wav", "UPPER.MP3", "a.Mp4",
+    ]
+    dump("content_type_for", [
+        {"path": p, "content_type": tr.content_type_for(p)} for p in ext_cases
+    ])
+
+    dump("transcribe_constants", {
+        "TRANSCRIBE_URL_SUFFIX": tr.TRANSCRIBE_URL_SUFFIX,
+        "DEFAULT_LANGUAGE": tr.DEFAULT_LANGUAGE,
+        "DEFAULT_MODEL": tr.DEFAULT_MODEL,
+        "TRANSCRIBE_MODELS": tr.TRANSCRIBE_MODELS,
+    })
+
+    # Request construction, captured without touching the network.
+    import httpx as _httpx
+
+    captured: list[dict] = []
+
+    class _Resp:
+        status_code = 200
+
+        def json(self):
+            return {"text": "stub"}
+
+        text = ""
+
+    def fake_post(url, **kw):
+        files = kw.get("files") or {}
+        fname, fdata, ctype = files.get("file", (None, b"", None))
+        captured.append({
+            "url": url,
+            "header_names": sorted((kw.get("headers") or {}).keys()),
+            "form": kw.get("data"),
+            "file_name": fname,
+            "file_bytes": len(fdata) if isinstance(fdata, (bytes, bytearray)) else None,
+            "file_content_type": ctype,
+            "timeout": kw.get("timeout"),
+        })
+        return _Resp()
+
+    real_post = _httpx.post
+    real_load = tr.ChatGPTAuth.load
+    stub_auth = tr.ChatGPTAuth(access_token="AT", refresh_token="RT", account_id="ACC")
+    tr.ChatGPTAuth.load = classmethod(lambda cls: stub_auth)  # type: ignore[assignment]
+    _httpx.post = fake_post  # type: ignore[assignment]
+    try:
+        lang_cases = ["en", "hi", None, "auto", ""]
+        for lang in lang_cases:
+            tr.transcribe_audio(
+                b"RIFFfake", filename="codex-audio.wav",
+                content_type="audio/wav", language=lang,
+            )
+    finally:
+        _httpx.post = real_post  # type: ignore[assignment]
+        tr.ChatGPTAuth.load = real_load  # type: ignore[assignment]
+
+    dump("transcribe_requests", [
+        {"language": lang, "request": cap}
+        for lang, cap in zip(["en", "hi", None, "auto", ""], captured)
+    ])
+
+    # transcription_headers(), including the drop-empty-values filter
+    hdr_cases = [
+        {"label": "full", "kw": {"access_token": "AT", "refresh_token": "RT", "account_id": "ACC"}},
+        {"label": "no-account-id", "kw": {"access_token": "AT", "refresh_token": "RT", "account_id": None}},
+        {"label": "empty-account-id", "kw": {"access_token": "AT", "refresh_token": None, "account_id": ""}},
+    ]
+    dump("transcription_headers", [
+        {"label": c["label"], "input": c["kw"], "headers": auth_mod.ChatGPTAuth(**c["kw"]).transcription_headers()}
+        for c in hdr_cases
+    ])
+
+
+# ----------------------------------------------------------- cli stream refusal
+def gen_cli_behaviour() -> None:
+    """main() paths that do not need the network."""
+    out = []
+    buf = io.StringIO()
+    real = sys.stderr
+    sys.stderr = buf
+    try:
+        code = cli_mod.main(["--stream"])
+    finally:
+        sys.stderr = real
+    out.append({"argv": ["--stream"], "exit_code": code, "stderr": buf.getvalue()})
+
+    buf = io.StringIO()
+    sys.stderr = buf
+    try:
+        code = cli_mod.main(["file.wav", "--stream"])
+    finally:
+        sys.stderr = real
+    out.append({"argv": ["file.wav", "--stream"], "exit_code": code, "stderr": buf.getvalue()})
+
+    dump("cli_stream_refusal", out)
+
+
 if __name__ == "__main__":
     print("generating fixtures…")
     gen_sessions()
@@ -433,4 +539,6 @@ if __name__ == "__main__":
     gen_events()
     gen_renderer()
     gen_args()
+    gen_transcribe()
+    gen_cli_behaviour()
     print("done")
