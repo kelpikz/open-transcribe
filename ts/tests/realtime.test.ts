@@ -231,6 +231,17 @@ test("handle without onDelta/onFinal/onEvent does not throw", () => {
   expect(tx.lastError).toEqual({ code: "x" });
 });
 
+test("handle falls back to the whole event when error is an empty dict (Python: {} is falsy)", () => {
+  // Python: `self.last_error = event.get("error") or event` -- an `or`
+  // fallback. `{}` is falsy in Python (unlike JS, where `{}` is truthy), so
+  // an explicit empty-dict `error` value is replaced by the whole event,
+  // same as a missing/null `error` key.
+  const { tx } = bareTranscriber();
+  const event = { type: "error", error: {} };
+  tx.handle(event);
+  expect(tx.lastError).toEqual(event);
+});
+
 // --------------------------------------------------------------------- init
 
 test("init defaults", () => {
