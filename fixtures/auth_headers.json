@@ -1,0 +1,43 @@
+[
+  {
+    "label": "full",
+    "input": {
+      "access_token": "AT",
+      "refresh_token": "RT",
+      "account_id": "ACC",
+      "id_token": "IT"
+    },
+    "headers": {
+      "Authorization": "Bearer AT",
+      "User-Agent": "codex-audio/0.1 (reverse-engineered from codex-cli)",
+      "originator": "codex_cli_rs",
+      "ChatGPT-Account-Id": "ACC"
+    }
+  },
+  {
+    "label": "no-account",
+    "input": {
+      "access_token": "AT",
+      "refresh_token": "RT",
+      "account_id": null
+    },
+    "headers": {
+      "Authorization": "Bearer AT",
+      "User-Agent": "codex-audio/0.1 (reverse-engineered from codex-cli)",
+      "originator": "codex_cli_rs"
+    }
+  },
+  {
+    "label": "empty-account",
+    "input": {
+      "access_token": "AT",
+      "refresh_token": null,
+      "account_id": ""
+    },
+    "headers": {
+      "Authorization": "Bearer AT",
+      "User-Agent": "codex-audio/0.1 (reverse-engineered from codex-cli)",
+      "originator": "codex_cli_rs"
+    }
+  }
+]

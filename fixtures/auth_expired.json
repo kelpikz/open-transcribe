@@ -1,0 +1,30 @@
+{
+  "now": 1700000000.0,
+  "skew_seconds": 60,
+  "cases": [
+    {
+      "label": "expires-far-future",
+      "expired": false
+    },
+    {
+      "label": "expires-in-90s",
+      "expired": false
+    },
+    {
+      "label": "expires-in-30s-inside-skew",
+      "expired": true
+    },
+    {
+      "label": "expires-exactly-60s",
+      "expired": false
+    },
+    {
+      "label": "already-expired",
+      "expired": true
+    },
+    {
+      "label": "unparseable-token",
+      "expired": false
+    }
+  ]
+}

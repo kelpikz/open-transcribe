@@ -1,0 +1,313 @@
+[
+  {
+    "label": "defaults",
+    "kwargs": {},
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": null,
+          "turn_detection": null,
+          "transcription": {
+            "model": "gpt-4o-transcribe",
+            "language": "en"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "no-language",
+    "kwargs": {
+      "language": null
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": null,
+          "turn_detection": null,
+          "transcription": {
+            "model": "gpt-4o-transcribe"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "mini-model",
+    "kwargs": {
+      "model": "gpt-4o-mini-transcribe"
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": null,
+          "turn_detection": null,
+          "transcription": {
+            "model": "gpt-4o-mini-transcribe",
+            "language": "en"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "whisper",
+    "kwargs": {
+      "model": "whisper-1"
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": null,
+          "turn_detection": null,
+          "transcription": {
+            "model": "whisper-1",
+            "language": "en"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "with-prompt",
+    "kwargs": {
+      "prompt": "Ajith, codex, aiortc"
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": null,
+          "turn_detection": null,
+          "transcription": {
+            "model": "gpt-4o-transcribe",
+            "language": "en",
+            "prompt": "Ajith, codex, aiortc"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "vad-on",
+    "kwargs": {
+      "vad": true
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": null,
+          "turn_detection": {
+            "type": "server_vad",
+            "threshold": 0.5,
+            "prefix_padding_ms": 300,
+            "silence_duration_ms": 500
+          },
+          "transcription": {
+            "model": "gpt-4o-transcribe",
+            "language": "en"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "vad-on-tuned",
+    "kwargs": {
+      "vad": true,
+      "silence_ms": 900,
+      "threshold": 0.7,
+      "prefix_padding_ms": 120
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": null,
+          "turn_detection": {
+            "type": "server_vad",
+            "threshold": 0.7,
+            "prefix_padding_ms": 120,
+            "silence_duration_ms": 900
+          },
+          "transcription": {
+            "model": "gpt-4o-transcribe",
+            "language": "en"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "near-field",
+    "kwargs": {
+      "noise_reduction": "near_field"
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": {
+            "type": "near_field"
+          },
+          "turn_detection": null,
+          "transcription": {
+            "model": "gpt-4o-transcribe",
+            "language": "en"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "far-field-vad",
+    "kwargs": {
+      "noise_reduction": "far_field",
+      "vad": true
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": {
+            "type": "far_field"
+          },
+          "turn_detection": {
+            "type": "server_vad",
+            "threshold": 0.5,
+            "prefix_padding_ms": 300,
+            "silence_duration_ms": 500
+          },
+          "transcription": {
+            "model": "gpt-4o-transcribe",
+            "language": "en"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "everything",
+    "kwargs": {
+      "model": "whisper-1",
+      "language": "hi",
+      "prompt": "p",
+      "silence_ms": 250,
+      "prefix_padding_ms": 50,
+      "threshold": 0.1,
+      "vad": true,
+      "noise_reduction": "near_field"
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": {
+            "type": "near_field"
+          },
+          "turn_detection": {
+            "type": "server_vad",
+            "threshold": 0.1,
+            "prefix_padding_ms": 50,
+            "silence_duration_ms": 250
+          },
+          "transcription": {
+            "model": "whisper-1",
+            "language": "hi",
+            "prompt": "p"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "empty-prompt-falsy",
+    "kwargs": {
+      "prompt": ""
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": null,
+          "turn_detection": null,
+          "transcription": {
+            "model": "gpt-4o-transcribe",
+            "language": "en"
+          }
+        }
+      }
+    }
+  },
+  {
+    "label": "empty-language-falsy",
+    "kwargs": {
+      "language": ""
+    },
+    "result": {
+      "type": "transcription",
+      "audio": {
+        "input": {
+          "format": {
+            "type": "audio/pcm",
+            "rate": 24000
+          },
+          "noise_reduction": null,
+          "turn_detection": null,
+          "transcription": {
+            "model": "gpt-4o-transcribe"
+          }
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,9 @@
+{
+  "name": "codex-audio",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "werift": "^0.24.4"
+  }
+}

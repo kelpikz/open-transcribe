@@ -1,0 +1,52 @@
+[
+  {
+    "label": "exp-int",
+    "token": "header.eyJleHAiOiAyMDAwMDAwMDAwfQ==.sig",
+    "exp": 2000000000.0
+  },
+  {
+    "label": "exp-float",
+    "token": "header.eyJleHAiOiAxOTk5OTk5OTk5LjV9.sig",
+    "exp": 1999999999.5
+  },
+  {
+    "label": "exp-unpadded",
+    "token": "header.eyJleHAiOiAxMjM0NTY3ODkwfQ.sig",
+    "exp": 1234567890.0
+  },
+  {
+    "label": "exp-string-numeric",
+    "token": "header.eyJleHAiOiAiMTcwMDAwMDAwMCJ9.sig",
+    "exp": 1700000000.0
+  },
+  {
+    "label": "no-exp-claim",
+    "token": "header.eyJzdWIiOiAieCJ9.sig",
+    "exp": null
+  },
+  {
+    "label": "not-a-jwt",
+    "token": "totally-not-a-jwt",
+    "exp": null
+  },
+  {
+    "label": "empty",
+    "token": "",
+    "exp": null
+  },
+  {
+    "label": "one-segment",
+    "token": "onlyonesegment",
+    "exp": null
+  },
+  {
+    "label": "bad-base64",
+    "token": "header.!!!!not-base64!!!!.sig",
+    "exp": null
+  },
+  {
+    "label": "extra-claims",
+    "token": "header.eyJleHAiOiAxODAwMDAwMDAwLCAic3ViIjogInUiLCAiYXVkIjogWyJhIiwgImIiXX0=.sig",
+    "exp": 1800000000.0
+  }
+]

@@ -1,0 +1,39 @@
+{
+  "DEFAULT_MODEL": "gpt-4o-transcribe",
+  "CODEX_MODEL": "gpt-4o-mini-transcribe",
+  "TRANSCRIBE_MODELS": [
+    "gpt-4o-transcribe",
+    "gpt-4o-mini-transcribe",
+    "whisper-1"
+  ],
+  "DEFAULT_LANGUAGE": "en",
+  "DEFAULT_SILENCE_MS": 500,
+  "DEFAULT_PREFIX_PADDING_MS": 300,
+  "DEFAULT_VAD_THRESHOLD": 0.5,
+  "DELTA_EVENTS": [
+    "conversation.input_transcript.delta",
+    "conversation.item.input_audio_transcription.delta"
+  ],
+  "DONE_EVENTS": [
+    "conversation.input_transcript.done",
+    "conversation.input_transcript.turn_marked",
+    "conversation.item.input_audio_transcription.completed"
+  ],
+  "DEFAULT_SESSION": {
+    "type": "transcription",
+    "audio": {
+      "input": {
+        "format": {
+          "type": "audio/pcm",
+          "rate": 24000
+        },
+        "noise_reduction": null,
+        "turn_detection": null,
+        "transcription": {
+          "model": "gpt-4o-transcribe",
+          "language": "en"
+        }
+      }
+    }
+  }
+}

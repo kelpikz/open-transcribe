@@ -3,3 +3,8 @@ __pycache__/
 .venv/
 probes/*.wav
 uv.lock
+
+node_modules/
+ts/node_modules/
+dist/
+.tmp_codex-src

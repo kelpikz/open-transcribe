@@ -1,0 +1,501 @@
+[
+  {
+    "argv": [],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "file.wav"
+    ],
+    "parsed": {
+      "input": "file.wav",
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--stream"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": true,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--json"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": true,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "-q"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": true,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--quiet"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": true,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "-l",
+      "hi"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "hi",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--language",
+      "auto"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "auto",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--model",
+      "whisper-1"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "whisper-1",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--device",
+      "3"
+    ],
+    "parsed": {
+      "input": null,
+      "device": "3",
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--device",
+      "Microphone (Realtek)"
+    ],
+    "parsed": {
+      "input": null,
+      "device": "Microphone (Realtek)",
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--silence-ms",
+      "900"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 900,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--noise-reduction",
+      "near_field"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "near_field",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--noise-reduction",
+      "none"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--drain",
+      "0"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 0.0
+    }
+  },
+  {
+    "argv": [
+      "--drain",
+      "4.5"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 4.5
+    }
+  },
+  {
+    "argv": [
+      "--no-partials",
+      "--no-color"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": true,
+      "no_color": true,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--raw-events"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": true,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--list-devices"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": true,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "--session",
+      "{\"type\":\"transcription\"}"
+    ],
+    "parsed": {
+      "input": null,
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "en",
+      "prompt": null,
+      "stream": false,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": false,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": "{\"type\":\"transcription\"}",
+      "drain": 2.0
+    }
+  },
+  {
+    "argv": [
+      "in.mp3",
+      "--stream",
+      "--json",
+      "-l",
+      "es",
+      "--drain",
+      "1.5"
+    ],
+    "parsed": {
+      "input": "in.mp3",
+      "device": null,
+      "model": "gpt-4o-transcribe",
+      "list_devices": false,
+      "language": "es",
+      "prompt": null,
+      "stream": true,
+      "silence_ms": 500,
+      "noise_reduction": "none",
+      "json": true,
+      "quiet": false,
+      "no_partials": false,
+      "no_color": false,
+      "raw_events": false,
+      "session": null,
+      "drain": 1.5
+    }
+  }
+]
