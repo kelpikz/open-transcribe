@@ -123,3 +123,10 @@ State: what you ported, which fixtures you assert against, test and typecheck
 results (actual output, not a claim), any behavioural divergence from the
 Python and why, anything you added to `contract.ts`, and anything you think is
 a latent bug that you preserved rather than fixed.
+
+**Also include an `implementationNotes.md` section** in your report: terse
+bullets covering edge cases you hit, hacks you resorted to, and non-obvious
+decisions a future reader would otherwise have to rediscover. Do NOT edit
+`implementationNotes.md` yourself — the orchestrator owns that file and folds
+each module's notes in, so parallel worktrees cannot conflict over it. Keep the
+bullets short and specific; skip anything already recorded there.
