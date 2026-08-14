@@ -22,6 +22,7 @@
 import { MediaStreamTrack, RTCPeerConnection, RTCSessionDescription } from "werift";
 
 import { type FetchLike, chatgptBaseUrl } from "./auth";
+import { codepointSlice, pyTruthy } from "./pycompat";
 import type {
   AuthLike,
   BuildSessionOptions,
@@ -155,39 +156,7 @@ export class NegotiationError extends Error {
   }
 }
 
-/**
- * Python: `response.text[:500]` indexes by Unicode code point; JS's
- * `String.prototype.slice` indexes by UTF-16 code unit and can split a
- * surrogate pair. Same fix as transcribe.ts's `codepointSlice`, duplicated
- * here (rather than imported) so this module stays independent of
- * transcribe.ts -- PORTING.md scopes each agent to its own module.
- */
-function codepointSlice(s: string, end: number): string {
-  return Array.from(s).slice(0, end).join("");
-}
 
-/**
- * Mimic Python's truthiness for arbitrary JSON-decoded values: `None`,
- * `False`, `0`/`0.0`, `""`, `[]`, and `{}` are falsy; everything else is
- * truthy. JS truthiness agrees for scalars but disagrees for empty
- * arrays/objects (always truthy in JS). `handle()` needs this because
- * `_handle`'s three `or`-fallbacks (`delta`, `transcript`, `error`) all
- * operate on values decoded from untrusted JSON, where an empty dict/list is
- * a realistic payload shape -- e.g. a server sending `{"type": "error",
- * "error": {}}` must fall back to the whole event in Python (`{} or event`
- * is falsy-or), but plain JS `||` would keep the empty object since `{}` is
- * always truthy in JS. Duplicated from auth.ts's `pyTruthy` (rather than
- * imported) so this module stays independent -- PORTING.md scopes each
- * agent to its own module.
- */
-function pyTruthy(value: unknown): boolean {
-  if (value === null || value === undefined || value === false) return false;
-  if (typeof value === "number") return value !== 0;
-  if (typeof value === "string") return value.length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return true;
-}
 
 /** Trade our SDP offer for the server's answer. Returns the answer SDP. */
 export async function negotiate(

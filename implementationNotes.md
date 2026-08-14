@@ -131,6 +131,36 @@ Use the active voice. Use the simple present tense. Keep each entry short.
   `recordMicrophone()`. The audio data is then lost. The Python code has the
   same condition. This is not a new error.
 
+## realtime (legacy WebRTC backend)
+
+- The `_handle` method has three `or` fallbacks for `delta`, `transcript`, and
+  `error`. An empty dict is false in Python and true in JavaScript. Thus a
+  message such as `{"type": "error", "error": {}}` gives a different result.
+  Use `pyTruthy`.
+- The constructor has `session or DEFAULT_SESSION`. This has the same problem.
+  The port counts the keys of the session object.
+- JavaScript has no equivalent of `asyncio.Event`. The port has an `AsyncEvent`
+  class with a `wait(timeoutSeconds)` method. The timeout logic is in `wait()`.
+  It is not an external `Promise.race`. Thus the timer and the waiter list have
+  one owner. They release each other.
+- There is no automatic test for `connect()`. A test needs a true
+  `RTCPeerConnection`. The werift default configuration sends data to a public
+  STUN server. The Python test suite also does not test `connect()`.
+- `close()` does not clear the channel or remove its listeners. `connect()`
+  does not release `pc` if `negotiate()` gives an error. The Python code has
+  the same conditions. These are not new errors.
+
+## Shared Python compatibility code
+
+- The file `ts/src/pycompat.ts` holds `pyTruthy`, `codepointSlice`, and
+  `isPlainRecord`.
+- Each agent worked only in its own module. Thus the agents wrote `pyTruthy`
+  two times and `codepointSlice` two times. Two copies of one rule are
+  dangerous. If you correct one copy, the other copy stays incorrect. The
+  code is now in one file.
+- A value import must not have the `.ts` extension. A type-only import can
+  have the extension, because TypeScript removes that import.
+
 ## cli
 
 - `Renderer` reads `sys.stderr.encoding`. If it cannot write the characters

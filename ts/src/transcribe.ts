@@ -21,6 +21,7 @@ import * as path from "node:path";
 
 import { ChatGPTAuth, chatgptBaseUrl, type Clock, type FetchLike } from "./auth";
 import type { TranscribeOptions, TranscriptionBackend } from "./contract";
+import { codepointSlice } from "./pycompat";
 
 export const TRANSCRIBE_URL_SUFFIX = "/transcribe";
 export const DEFAULT_LANGUAGE = "en";
@@ -28,20 +29,6 @@ export const DEFAULT_LANGUAGE = "en";
 export const DEFAULT_MODEL = "gpt-4o-transcribe";
 export const TRANSCRIBE_MODELS = ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"];
 
-/**
- * Python: `response.text[:500]` — Python strings index by Unicode code
- * point, not UTF-16 code unit. JS's `String.prototype.slice` indexes by
- * UTF-16 code unit, so for a body containing an astral-plane character
- * (outside the Basic Multilingual Plane, e.g. most emoji) straddling the
- * 500th unit, a plain `.slice(0, 500)` would cut through a surrogate pair,
- * producing a lone unpaired surrogate — invalid as a standalone string and
- * not what Python would ever produce. Iterating the string (`for...of` /
- * `Array.from`, which both walk by code point) and slicing there reproduces
- * Python's semantics exactly, including at that boundary.
- */
-function codepointSlice(s: string, end: number): string {
-  return Array.from(s).slice(0, end).join("");
-}
 
 /** The ChatGPT transcription service rejected or malformed a request. */
 export class TranscriptionError extends Error {

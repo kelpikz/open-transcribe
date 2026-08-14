@@ -28,6 +28,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import type { AuthFile, AuthLike, StoredTokens } from "./contract.ts";
+import { isPlainRecord, pyTruthy } from "./pycompat";
 
 export const TOKEN_URL = "https://auth.openai.com/oauth/token";
 // Same client_id the Codex CLI registers for its device/PKCE login.
@@ -107,28 +108,6 @@ export function jwtExp(token: string): number | null {
     // Python: `except Exception: return None` — swallow anything.
     return null;
   }
-}
-
-/**
- * Mimic Python's truthiness for arbitrary JSON-decoded values: `None`,
- * `False`, `0`/`0.0`, `""`, `[]`, and `{}` are falsy; everything else
- * (including NaN and non-empty containers) is truthy. JS truthiness agrees
- * for scalars but disagrees for empty arrays/objects, which are always
- * truthy in JS — that gap is exactly what `raw.get("tokens") or {}` and
- * `if not access:` in the Python source rely on.
- */
-function pyTruthy(value: unknown): boolean {
-  if (value === null || value === undefined || value === false) return false;
-  if (typeof value === "number") return value !== 0; // NaN !== 0 -> truthy, matching bool(float('nan'))
-  if (typeof value === "string") return value.length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === "object") return Object.keys(value).length > 0;
-  return true;
-}
-
-/** True for a JSON-decoded plain object (not null, not an array). */
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /** Best-effort Python type name for a JSON-decoded value, for error text. */
