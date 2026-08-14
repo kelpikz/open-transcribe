@@ -31,12 +31,14 @@ import {
   CHANNELS,
   DropOldestQueue,
   FRAME_MS,
+  FfmpegRtpAudioSource,
   SAMPLES_PER_FRAME,
   SAMPLE_RATE,
   buildWav,
   fileTrack,
   finalizeRecording,
   listDevices,
+  recordMicrophone,
 } from "../src/audio";
 import type { MediaStreamTrack } from "werift";
 
@@ -292,6 +294,64 @@ describe("fileTrack", () => {
     await new Promise((r) => setTimeout(r, 50));
     source.stop();
     await waitUntil(() => !isProcessAlive(pid), 5_000);
+  }, 10_000);
+});
+
+// -------------------------------------------- resource-leak regressions
+//
+// Both of these pin down real leaks an adversarial review found in an
+// earlier version of this port (see final report): a dangling readline
+// listener on process.stdin when ffmpeg exits before a stdin line arrives,
+// and a leaked UDP socket when Bun.spawn() throws (ffmpeg missing/unspawnable)
+// after the socket was already bound.
+
+function udpSocketsBoundTo127Count(): number {
+  const proc = Bun.spawnSync(["netstat", "-an", "-p", "UDP"]);
+  const text = new TextDecoder().decode(proc.stdout);
+  return text.split(/\r?\n/).filter((line) => line.includes("127.0.0.1")).length;
+}
+
+describe("resource-leak regressions", () => {
+  test("recordMicrophone releases its stdin listener when ffmpeg exits before a line arrives", async () => {
+    // A device name ffmpeg's dshow backend can't possibly open makes ffmpeg
+    // exit quickly with no PCM ever captured, so recordMicrophone() rejects
+    // via finalizeRecording's "no audio was captured" -- the same path that
+    // would previously leave the readline.Interface's "data"/"error"/"end"
+    // listeners attached to process.stdin forever (which also keeps the
+    // event loop alive).
+    // readline attaches "data"/"error"/"end" to its input stream and removes
+    // them again on close() -- check those specifically rather than full
+    // event-name equality, since stdin's very first touch in a test run
+    // also fires an unrelated one-time internal construction marker.
+    const leakedEvents = ["data", "error", "end"] as const;
+    const before = leakedEvents.map((e) => process.stdin.listenerCount(e));
+    await expect(recordMicrophone("this-device-definitely-does-not-exist-xyz-123")).rejects.toThrow(
+      "no audio was captured",
+    );
+    const after = leakedEvents.map((e) => process.stdin.listenerCount(e));
+    expect(after).toEqual(before);
+  }, 10_000);
+
+  test("FfmpegRtpAudioSource.spawn() does not leak its UDP socket when ffmpeg fails to launch", async () => {
+    const originalSpawn = Bun.spawn;
+    // @ts-expect-error -- intentionally monkeypatching for this test only
+    Bun.spawn = (...args: Parameters<typeof Bun.spawn>) => {
+      throw new Error("simulated: ffmpeg executable not found");
+    };
+    try {
+      const before = udpSocketsBoundTo127Count();
+      for (let i = 0; i < 10; i++) {
+        await expect(FfmpegRtpAudioSource.spawn(["-i", "dummy"])).rejects.toThrow(
+          "simulated: ffmpeg executable not found",
+        );
+      }
+      // Give the OS a moment to reflect closed sockets in netstat.
+      await new Promise((r) => setTimeout(r, 150));
+      const after = udpSocketsBoundTo127Count();
+      expect(after).toBeLessThanOrEqual(before + 1); // small slack, not +10
+    } finally {
+      Bun.spawn = originalSpawn;
+    }
   }, 10_000);
 });
 

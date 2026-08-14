@@ -277,17 +277,36 @@ export function listDevices(): string {
 
 // ---------------------------------------------------------- recordMicrophone
 
-/** Waits for stdin to receive a line (or close), like `sys.stdin.readline()`. */
-function waitForStdinLine(): Promise<void> {
-  return new Promise<void>((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, terminal: false });
+/**
+ * Waits for stdin to receive a line (or close), like `sys.stdin.readline()`.
+ *
+ * Returns both the promise and a `cancel()` to release the readline
+ * interface if the caller stops waiting for another reason (recordMicrophone
+ * races this against ffmpeg exiting early). Without an explicit cancel path,
+ * losing that race would leave the readline.Interface's "line"/"close"
+ * listeners attached to process.stdin forever -- a dangling listener that
+ * also keeps the event loop alive, so the process could never exit on its
+ * own even after recordMicrophone() has returned.
+ */
+function waitForStdinLine(): { promise: Promise<void>; cancel: () => void } {
+  const rl = readline.createInterface({ input: process.stdin, terminal: false });
+  let settled = false;
+  const promise = new Promise<void>((resolve) => {
     const finish = () => {
+      if (settled) return;
+      settled = true;
       rl.close();
       resolve();
     };
     rl.once("line", finish);
     rl.once("close", finish);
   });
+  const cancel = () => {
+    if (settled) return;
+    settled = true;
+    rl.close();
+  };
+  return { promise, cancel };
 }
 
 /**
@@ -392,7 +411,15 @@ class RawPcmCaptureSession implements AsyncDisposable {
  */
 export async function recordMicrophone(device?: string | number | null): Promise<Uint8Array> {
   await using session = RawPcmCaptureSession.spawn(device);
-  await Promise.race([waitForStdinLine(), session.exited]);
+  const stdinLine = waitForStdinLine();
+  try {
+    await Promise.race([stdinLine.promise, session.exited]);
+  } finally {
+    // If ffmpeg exited first, the stdin wait never settles on its own --
+    // cancel() releases the readline interface (and its listeners on
+    // process.stdin) either way. No-op if the line already arrived.
+    stdinLine.cancel();
+  }
   await session.stop();
   return finalizeRecording(session.capturedChunks());
 }
@@ -401,7 +428,16 @@ export async function recordMicrophone(device?: string | number | null): Promise
 
 function bindEphemeralUdp(socket: dgram.Socket): Promise<number> {
   return new Promise((resolve, reject) => {
-    const onError = (err: Error) => reject(err);
+    const onError = (err: Error) => {
+      // Don't assume the failed bind already released the fd -- close
+      // explicitly so a bind failure can't leak a socket either.
+      try {
+        socket.close();
+      } catch {
+        // ignore
+      }
+      reject(err);
+    };
     socket.once("error", onError);
     socket.bind(0, "127.0.0.1", () => {
       socket.removeListener("error", onError);
@@ -430,7 +466,12 @@ function bindEphemeralUdp(socket: dgram.Socket): Promise<number> {
  * behaviour even though werift's push-based writeRtp() doesn't strictly
  * need a queue the way aiortc's pull-based recv() did.
  */
-class FfmpegRtpAudioSource implements AudioSource {
+// Exported so tests can exercise spawn()'s failure/cleanup path directly
+// (including the "does ffmpeg launch failure leak the UDP socket" case) and
+// so tests can read `ffmpegPid` off a fileTrack()/MicrophoneTrack instance
+// to assert no orphaned process after stop(). Not otherwise part of the
+// public module surface -- fileTrack()/MicrophoneTrack are the intended API.
+export class FfmpegRtpAudioSource implements AudioSource {
   readonly track: MediaStreamTrack;
   private readonly proc: ReturnType<typeof Bun.spawn>;
   private readonly socket: dgram.Socket;
@@ -462,21 +503,31 @@ class FfmpegRtpAudioSource implements AudioSource {
     const queue = new DropOldestQueue<Buffer>(50);
     socket.on("message", (msg) => queue.push(msg));
 
-    const proc = Bun.spawn(
-      [
-        "ffmpeg",
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        ...ffmpegInputAndCodecArgs,
-        "-f",
-        "rtp",
-        "-payload_type",
-        "111",
-        `rtp://127.0.0.1:${port}`,
-      ],
-      { stdin: "ignore", stdout: "ignore", stderr: "pipe" },
-    );
+    // Bun.spawn() can throw synchronously (e.g. ffmpeg not on PATH). Without
+    // this try/catch, that throw would propagate out of spawn() leaving the
+    // already-bound `socket` with no owner to ever close it -- a leaked UDP
+    // socket every time ffmpeg fails to launch.
+    let proc: ReturnType<typeof Bun.spawn>;
+    try {
+      proc = Bun.spawn(
+        [
+          "ffmpeg",
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          ...ffmpegInputAndCodecArgs,
+          "-f",
+          "rtp",
+          "-payload_type",
+          "111",
+          `rtp://127.0.0.1:${port}`,
+        ],
+        { stdin: "ignore", stdout: "ignore", stderr: "pipe" },
+      );
+    } catch (err) {
+      socket.close();
+      throw err;
+    }
     return new FfmpegRtpAudioSource(proc, socket, queue);
   }
 
