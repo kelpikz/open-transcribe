@@ -1,104 +1,123 @@
 # Implementation notes
 
-Edge cases, hacks, and non-obvious decisions. Short entries only.
+This file uses ASD-STE100 Simplified Technical English. Write short sentences.
+Use the active voice. Use the simple present tense. Keep each entry short.
 
 ## Endpoints
 
-- `POST /backend-api/codex/realtime/calls` → **404** (2026-08-14). Not auth: `/me`,
-  `/accounts/check`, `/models` all returned 200 with the same token. 9 path
-  variants probed, all 404.
-- `POST /backend-api/transcribe` (upload route) is **unverified** — the one
-  attempt failed earlier, at auth load, because `~/.codex/auth.json` lost its
-  access token mid-session. Treat as reported, not proven.
-- Binary strings from codex-cli 0.147.0 show `realtime_websocket/protocol_v2.rs`
-  with fields `transcript`, `delta`, `sample_rate`, `channels`,
-  `samples_per_channel`, `data` → suggests raw PCM over WebSocket, not Opus over
-  WebRTC. Unconfirmed. If true, fixing realtime means *deleting* the WebRTC
-  stack, not repairing it.
+- `POST /backend-api/codex/realtime/calls` gives code 404 (2026-08-14).
+- This is not an authentication problem. The same token gets code 200 from
+  `/me`, `/accounts/check`, and `/models`. We tried 9 different paths. All 9
+  paths give code 404.
+- `POST /backend-api/transcribe` is the upload route. Nobody has tested this
+  route. The one test stopped at the authentication step, because
+  `~/.codex/auth.json` lost its access token. Do not assume that this route
+  operates correctly.
+- The codex-cli 0.147.0 binary contains `realtime_websocket/protocol_v2.rs`.
+  That module has the fields `transcript`, `delta`, `sample_rate`, `channels`,
+  `samples_per_channel`, and `data`. These fields show raw PCM data on a
+  WebSocket, and not Opus data on WebRTC. This is not confirmed. If it is
+  correct, you must delete the WebRTC code. Do not repair it.
 
-## Testing strategy
+## Test strategy
 
-- No live service, so the Python is the oracle: `tools/gen_fixtures.py` records
-  its exact pure-logic output to `fixtures/*.json`. TS asserts against the same
-  files. This survives deleting the Python.
-- After the pivot to the upload route, all 11 original fixtures regenerated
-  **byte-identical** — the pivot was purely additive.
+- There is no live service. Thus the Python code is the reference.
+  `tools/gen_fixtures.py` writes the exact Python output to `fixtures/*.json`.
+  The TypeScript tests compare against the same files. These files stay
+  correct after you delete the Python code.
+- The Python code changed to the upload route. After this change, all 11 of
+  the first fixtures are identical. The change only added code.
 
 ## auth
 
-- `_jwt_exp` uses Python `float()`, whose grammar is *not* JS `Number()`:
-  accepts `"1_000"`, `"inf"`, `"-inf"`, `"nan"`, surrounding whitespace;
-  rejects leading/trailing/adjacent underscores. Ported as a hand-written
-  `pyFloat` grammar, not `parseFloat`.
-- Python falsiness ≠ JS falsiness: `[]` and `{}` are falsy in Python. `load()`'s
-  access-token check and the header filters depend on this — needed a `pyTruthy`
-  helper.
-- `refresh()` must throw *before* mutating any field if `access_token` is
-  missing, or the token silently vanishes from the persisted file.
-- `save()` merges into the existing file, preserves unknown top-level keys,
-  `indent=2`, and stamps `last_refresh` as UTC `%Y-%m-%dT%H:%M:%SZ`. It must
-  leave the file untouched when the existing shape is malformed.
-- Expiry uses a 60s early-refresh skew, and is `false` when the token is
-  unparseable (`exp is not None and exp - 60 < now`). Clock is injectable so
-  this is testable.
-- `chatgpt_base_url()` strips **all** trailing slashes (`rstrip("/")`), not one.
+- `_jwt_exp` uses the Python `float()` function. The Python grammar is
+  different from the JavaScript `Number()` grammar. Python accepts `"1_000"`,
+  `"inf"`, `"-inf"`, `"nan"`, and spaces at each end. Python rejects an
+  underscore at the start or the end. Use the `pyFloat` function. Do not use
+  `parseFloat`.
+- Python false values are different from JavaScript false values. In Python,
+  `[]` and `{}` are false. The access token test in `load()` and the header
+  filters use this rule. Use the `pyTruthy` function.
+- `refresh()` must stop with an error before it changes a field, if
+  `access_token` is not in the response. If it does not stop first, the token
+  goes out of the file.
+- `save()` adds data to the file that is present. It keeps the unknown keys at
+  the top level. It uses `indent=2`. It writes `last_refresh` in the UTC
+  format `%Y-%m-%dT%H:%M:%SZ`. If the data in the file has a bad shape,
+  `save()` must not change the file.
+- The token expiry test uses a 60 second margin. The result is false if the
+  token is not readable. The rule is `exp is not None and exp - 60 < now`. You
+  can supply the clock, thus you can test this function.
+- `chatgpt_base_url()` removes all the slashes at the end. It does not remove
+  only one slash.
 
 ## transcribe (upload route)
 
-- Language rule is `if not language or language == "auto"` → `null`, `""` and
-  `"auto"` all send **no** form field.
-- Extension lookup is case-insensitive (`Path.suffix.lower()`). Unknown
-  extensions fall back to a MIME guess; anything not `audio/*` becomes
-  `application/octet-stream`. `mimetypes.guess_type` is registry-dependent on
-  Windows, so the fixture pins what this machine produced.
-- `transcription_headers()` sets `ChatGPT-Account-Id` to `account_id or ""`,
-  then drops empty values — so a missing account id yields no header at all
-  rather than an empty one.
+- The language rule is `if not language or language == "auto"`. Thus `null`,
+  `""`, and `"auto"` send no `language` field.
+- The file extension test ignores the letter case. It uses
+  `Path.suffix.lower()`. For an unknown extension, the code makes a guess. If
+  the guess is not `audio/*`, the code uses `application/octet-stream`.
+- `mimetypes.guess_type` gives different results on different systems, because
+  it reads the Windows registry. The fixture holds the results from this
+  computer.
+- `transcription_headers()` sets `ChatGPT-Account-Id` to `account_id or ""`.
+  Then it removes the empty values. Thus, if there is no account id, the
+  header is not present. The header is not empty.
 
 ## audio
 
-- Two unrelated sample rates in one module: **24000 Hz / blocksize 2400** for
-  `record_microphone` (upload route), **48000 Hz / 960 samples** for the legacy
-  WebRTC constants. Do not conflate.
-- werift's `MediaStreamTrack.writeRtp()` takes **RTP packets, not PCM**. aiortc
-  did Opus encode + packetization internally; werift does neither. Biggest
-  structural divergence in the port. Route: ffmpeg `-f rtp` → UDP → `node:dgram`
-  → `writeRtp`, which also gives realtime pacing for free (a file must play at
-  wall-clock speed, not be blasted at the server).
-- Mic queue is bounded at 50 and drops the **oldest** frame when full — stale
-  audio is worthless for dictation. Never let it grow unbounded.
-- Python stashes `player.audio._player_ref = player` purely to defeat GC. TS
-  equivalent: don't let the ffmpeg process die while the track is live.
+- This module has two different sample rates. `record_microphone` uses 24000 Hz
+  and a block size of 2400. The old WebRTC constants use 48000 Hz and 960
+  samples. Do not use one value in place of the other.
+- The werift function `MediaStreamTrack.writeRtp()` accepts RTP packets. It
+  does not accept PCM data. The Python library aiortc does the Opus compression
+  and the packet assembly. The werift library does neither of these two
+  operations. This is the largest difference between the two languages.
+- Use this method: ffmpeg with `-f rtp`, then UDP, then `node:dgram`, then
+  `writeRtp`. This method also gives the correct speed. A file must play at
+  real-time speed. Do not send a full file quickly.
+- The microphone queue holds a maximum of 50 items. When the queue is full, it
+  removes the oldest item. Old audio data is not useful for dictation. The
+  queue must not increase without a limit.
+- The Python code sets `player.audio._player_ref = player`. This keeps the
+  player in memory. In TypeScript, the ffmpeg process must continue while the
+  track is live.
 
 ## cli
 
-- `Renderer` sniffs `sys.stderr.encoding` and falls back from `… ✓ ─` to
-  `... * -` when it can't encode them (Windows cp1252). The dev console really
-  is cp1252 — printing `✓` there throws.
-- Live line is truncated to the last 110 chars so it overwrites cleanly on one
-  terminal row.
-- Parsed arg keys are argparse's **snake_case** (`silence_ms`, `no_partials`,
-  `raw_events`) — kept in TS so `ParsedArgs` compares directly against fixtures.
-- `--device` stays a *string* through parsing; `main()` converts all-digit
-  values to a number afterwards.
-- `--stream` now exits **2** with a message; the upload route returns one final
-  transcript.
+- `Renderer` reads `sys.stderr.encoding`. If it cannot write the characters
+  `… ✓ ─`, it uses the characters `... * -`. The console on this computer uses
+  cp1252. If you write `✓` to that console, you get an error.
+- The live line shows only the last 110 characters. Thus the line stays on one
+  row of the terminal.
+- The parsed argument keys use the argparse format with underscores. Examples:
+  `silence_ms`, `no_partials`, `raw_events`. The TypeScript code uses the same
+  keys. Thus you can compare `ParsedArgs` directly with the fixtures.
+- The `--device` value stays a string in the parser. Then `main()` changes a
+  value with only digits into a number.
+- `--stream` stops with the exit code 2 and a message. The upload route sends
+  one final transcript.
 
-## werift / Bun
+## werift and Bun
 
-- werift works under Bun: complete non-trickle offer, Opus audio m-line, data
-  channel, `iceGatheringState: "complete"` after `setLocalDescription` — same
-  assumption aiortc's code makes. Pure TS, so `bun build --compile` stays viable.
-- Divergence: werift gathers `srflx` candidates via a default STUN server;
-  aiortc gathers host candidates only. Noted, not chased.
+- werift operates correctly with Bun. It makes a complete offer with the Opus
+  audio m-line, the data channel, and the state `iceGatheringState: "complete"`
+  after `setLocalDescription`. The aiortc code makes the same assumption.
+- werift is TypeScript only. Thus you can use `bun build --compile`.
+- There is one difference. werift gets `srflx` candidates from a default STUN
+  server. aiortc gets only the host candidates. This is a note. Do not change
+  it.
 
-## Process / environment gotchas
+## Process and environment problems
 
-- **Worktree agents branch from committed state and cannot see a dirty tree.**
-  Uncommitted Python changes caused the first wave to port code that had already
-  moved. Snapshot before spawning.
-- Git Bash on Windows can leave a literal `NUL` file in the repo (reserved device
-  name); `git add` then fails with "short read while indexing NUL". Delete it.
-- `.gitignore` needs `.tmp_codex-src` **without** a trailing slash — an embedded
-  git repo is a gitlink entry, and the directory pattern doesn't match it.
-- The venv is uv-managed and has no `pip`; use `uv pip install`.
+- An agent in a worktree starts from the last commit. It cannot read the
+  changes that you did not commit. Because of this, the first agents used old
+  Python code. You must commit the changes before you start an agent.
+- Git Bash on Windows can make a file with the name `NUL` in the directory.
+  `NUL` is a reserved device name. Then `git add` gives the error "short read
+  while indexing NUL". Delete the file.
+- In `.gitignore`, write `.tmp_codex-src` without a slash at the end. An
+  embedded git directory is a gitlink item. A directory pattern does not find
+  a gitlink item.
+- The venv comes from uv and has no `pip`. Use `uv pip install`.

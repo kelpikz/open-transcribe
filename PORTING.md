@@ -130,3 +130,8 @@ decisions a future reader would otherwise have to rediscover. Do NOT edit
 `implementationNotes.md` yourself — the orchestrator owns that file and folds
 each module's notes in, so parallel worktrees cannot conflict over it. Keep the
 bullets short and specific; skip anything already recorded there.
+
+That file is written in **ASD-STE100 Simplified Technical English**: short
+sentences, active voice, simple present tense, one idea per sentence, no
+idioms or metaphors. Write your bullets plainly and the orchestrator will
+convert them; do not spend effort on the style yourself.
