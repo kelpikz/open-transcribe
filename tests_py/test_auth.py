@@ -70,6 +70,46 @@ def test_jwt_exp_swallows_arbitrary_exceptions():
     assert auth_mod._jwt_exp(None) is None  # type: ignore[arg-type]
 
 
+def _mk_jwt(payload):
+    import base64
+
+    raw = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode()
+    return f"header.{raw}.sig"
+
+
+def test_jwt_exp_float_accepts_signed_infinity_string():
+    # float("-inf") == float("-infinity") == -inf; not a fixture case, but a
+    # real corner of float()'s string grammar that the JS port must mirror.
+    result = auth_mod._jwt_exp(_mk_jwt({"exp": "-inf"}))
+    assert result == float("-inf")
+
+
+def test_jwt_exp_float_accepts_pep515_underscores():
+    # float("1_000") == 1000.0 (PEP 515). Underscores must sit strictly
+    # between two digits -- "1__000" and "1000_" both raise ValueError.
+    assert auth_mod._jwt_exp(_mk_jwt({"exp": "1_000"})) == 1000.0
+    assert auth_mod._jwt_exp(_mk_jwt({"exp": "1__000"})) is None
+    assert auth_mod._jwt_exp(_mk_jwt({"exp": "1000_"})) is None
+    assert auth_mod._jwt_exp(_mk_jwt({"exp": "_1000"})) is None
+
+
+def test_jwt_exp_float_accepts_infinity_and_nan_case_insensitive():
+    import math
+
+    assert auth_mod._jwt_exp(_mk_jwt({"exp": "Infinity"})) == float("inf")
+    assert auth_mod._jwt_exp(_mk_jwt({"exp": "INF"})) == float("inf")
+    result = auth_mod._jwt_exp(_mk_jwt({"exp": "NaN"}))
+    assert result is not None and math.isnan(result)
+
+
+def test_expired_true_for_negative_infinity_exp(monkeypatch):
+    # A permanently-in-the-past exp must always read as expired, regardless
+    # of the clock -- exercises the -inf parsing path end-to-end.
+    monkeypatch.setattr(auth_mod.time, "time", lambda: 1_700_000_000.0)
+    a = auth_mod.ChatGPTAuth(_mk_jwt({"exp": "-inf"}), None, None)
+    assert a.expired is True
+
+
 # ------------------------------------------------------------------- load
 
 
@@ -133,6 +173,31 @@ def test_load_succeeds_and_populates_all_fields(monkeypatch, tmp_path):
     assert a.refresh_token == "RT"
     assert a.account_id == "ACC"
     assert a.id_token == "IT"
+
+
+def test_load_raises_attributeerror_when_tokens_is_nonempty_string(monkeypatch, tmp_path):
+    # raw.get("tokens") or {} -- a non-empty string is truthy, so it is
+    # passed straight through to tokens.get(...), which doesn't exist on str.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    (tmp_path / "auth.json").write_text(json.dumps({"tokens": "notadict"}), encoding="utf-8")
+    with pytest.raises(AttributeError):
+        auth_mod.ChatGPTAuth.load()
+
+
+def test_load_raises_attributeerror_when_tokens_is_nonempty_list(monkeypatch, tmp_path):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    (tmp_path / "auth.json").write_text(json.dumps({"tokens": [1, 2, 3]}), encoding="utf-8")
+    with pytest.raises(AttributeError):
+        auth_mod.ChatGPTAuth.load()
+
+
+def test_load_treats_empty_list_tokens_as_falsy_and_falls_back_to_empty_dict(monkeypatch, tmp_path):
+    # An empty list is falsy in Python, so `or {}` kicks in and load()
+    # reaches the ordinary "no access_token" error instead of crashing.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    (tmp_path / "auth.json").write_text(json.dumps({"tokens": []}), encoding="utf-8")
+    with pytest.raises(RuntimeError, match="has no ChatGPT access_token"):
+        auth_mod.ChatGPTAuth.load()
 
 
 def test_load_tolerates_missing_optional_fields(monkeypatch, tmp_path):
@@ -207,6 +272,39 @@ def test_save_stamps_last_refresh_utc_format(monkeypatch, tmp_path):
     parsed = time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ")
     # sanity: within a couple seconds of "before"
     assert abs(time.mktime(parsed) - time.mktime(before)) < 5
+
+
+def test_save_raises_attributeerror_when_top_level_raw_is_a_list(monkeypatch, tmp_path):
+    # raw.setdefault(...) requires raw to be dict-like; a top-level JSON
+    # array crashes before "tokens" is even considered, and the file is
+    # left untouched (no silent partial write).
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    p = tmp_path / "auth.json"
+    p.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+    a = auth_mod.ChatGPTAuth(access_token="AT", refresh_token=None, account_id=None)
+    with pytest.raises(AttributeError):
+        a.save()
+    assert json.loads(p.read_text(encoding="utf-8")) == [1, 2, 3]
+
+
+def test_save_raises_attributeerror_when_tokens_is_explicit_null(monkeypatch, tmp_path):
+    # setdefault() only substitutes a default when the key is ABSENT; an
+    # explicit null "tokens" key is left alone and .update() blows up on it.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    p = tmp_path / "auth.json"
+    p.write_text(json.dumps({"tokens": None}), encoding="utf-8")
+    a = auth_mod.ChatGPTAuth(access_token="AT", refresh_token=None, account_id=None)
+    with pytest.raises(AttributeError):
+        a.save()
+
+
+def test_save_raises_attributeerror_when_tokens_is_a_string(monkeypatch, tmp_path):
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    p = tmp_path / "auth.json"
+    p.write_text(json.dumps({"tokens": "notadict"}), encoding="utf-8")
+    a = auth_mod.ChatGPTAuth(access_token="AT", refresh_token=None, account_id=None)
+    with pytest.raises(AttributeError):
+        a.save()
 
 
 def test_save_writes_indent_2(monkeypatch, tmp_path):
@@ -330,6 +428,26 @@ def test_refresh_falls_back_to_existing_refresh_token_and_id_token_when_absent(m
     assert a.access_token == "NEWAT"
     assert a.refresh_token == "OLDRT"  # unchanged: body.get("refresh_token", self.refresh_token)
     assert a.id_token == "OLDIT"  # unchanged
+
+
+def test_refresh_raises_keyerror_when_access_token_absent_from_response(monkeypatch, tmp_path):
+    # Python indexes body["access_token"] (not .get()), so a response that
+    # omits the key crashes loudly instead of silently persisting a broken
+    # credential file.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    def fake_post(url, json=None, timeout=None):
+        return _FakeResponse({"refresh_token": "x"})
+
+    monkeypatch.setattr(auth_mod.httpx, "post", fake_post)
+
+    a = auth_mod.ChatGPTAuth(access_token="OLDAT", refresh_token="OLDRT", account_id=None)
+    with pytest.raises(KeyError):
+        a.refresh()
+
+    # And the file on disk (if any) must not have been touched by a partial
+    # save(), since refresh() should fail before calling save().
+    assert not (tmp_path / "auth.json").exists()
 
 
 def test_refresh_uses_explicit_null_over_existing_value(monkeypatch, tmp_path):

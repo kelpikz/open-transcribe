@@ -88,6 +88,31 @@ describe("jwtExp", () => {
       expect(jwtExp(c.token)).toBe(c.exp);
     });
   }
+
+  test("accepts a signed infinity string, like Python's float('-inf')", () => {
+    expect(jwtExp(mkJwt({ exp: "-inf" }))).toBe(-Infinity);
+  });
+
+  test("accepts PEP-515 underscore-separated numeric strings", () => {
+    expect(jwtExp(mkJwt({ exp: "1_000" }))).toBe(1000);
+    // Underscores must sit strictly between two digits.
+    expect(jwtExp(mkJwt({ exp: "1__000" }))).toBeNull();
+    expect(jwtExp(mkJwt({ exp: "1000_" }))).toBeNull();
+    expect(jwtExp(mkJwt({ exp: "_1000" }))).toBeNull();
+  });
+
+  test("accepts infinity/nan strings case-insensitively", () => {
+    expect(jwtExp(mkJwt({ exp: "Infinity" }))).toBe(Infinity);
+    expect(jwtExp(mkJwt({ exp: "INF" }))).toBe(Infinity);
+    expect(Number.isNaN(jwtExp(mkJwt({ exp: "NaN" })))).toBe(true);
+  });
+});
+
+describe("ChatGPTAuth.expired with a -inf exp", () => {
+  test("is always expired regardless of the clock", () => {
+    const a = new ChatGPTAuth(mkJwt({ exp: "-inf" }), null, null);
+    expect(a.expired(() => 1_700_000_000)).toBe(true);
+  });
 });
 
 // ------------------------------------------------------------------- load
@@ -121,6 +146,23 @@ describe("ChatGPTAuth.load", () => {
 
   test("throws when tokens is explicit null", () => {
     fs.writeFileSync(authPath(), JSON.stringify({ tokens: null }), "utf-8");
+    expect(() => ChatGPTAuth.load()).toThrow(/has no ChatGPT access_token/);
+  });
+
+  test("throws when tokens is a non-empty string (mirrors Python AttributeError)", () => {
+    fs.writeFileSync(authPath(), JSON.stringify({ tokens: "notadict" }), "utf-8");
+    expect(() => ChatGPTAuth.load()).toThrow();
+  });
+
+  test("throws when tokens is a non-empty array (mirrors Python AttributeError)", () => {
+    fs.writeFileSync(authPath(), JSON.stringify({ tokens: [1, 2, 3] }), "utf-8");
+    expect(() => ChatGPTAuth.load()).toThrow();
+  });
+
+  test("treats an empty array tokens as falsy, falling back to the ordinary 'no access_token' error", () => {
+    // Python: raw.get("tokens") or {} -- an empty list is falsy, so this
+    // does NOT crash with AttributeError; it reaches the friendly message.
+    fs.writeFileSync(authPath(), JSON.stringify({ tokens: [] }), "utf-8");
     expect(() => ChatGPTAuth.load()).toThrow(/has no ChatGPT access_token/);
   });
 
@@ -198,6 +240,25 @@ describe("ChatGPTAuth.save", () => {
     a.save();
     const text = fs.readFileSync(authPath(), "utf-8");
     expect(text.startsWith('{\n  "')).toBe(true);
+  });
+
+  test("throws when top-level raw is a JSON array, and leaves the file untouched", () => {
+    fs.writeFileSync(authPath(), JSON.stringify([1, 2, 3]), "utf-8");
+    const a = new ChatGPTAuth("AT", null, null);
+    expect(() => a.save()).toThrow();
+    expect(JSON.parse(fs.readFileSync(authPath(), "utf-8"))).toEqual([1, 2, 3]);
+  });
+
+  test("throws when tokens is explicit null (setdefault does not override a present key)", () => {
+    fs.writeFileSync(authPath(), JSON.stringify({ tokens: null }), "utf-8");
+    const a = new ChatGPTAuth("AT", null, null);
+    expect(() => a.save()).toThrow();
+  });
+
+  test("throws when tokens is a string", () => {
+    fs.writeFileSync(authPath(), JSON.stringify({ tokens: "notadict" }), "utf-8");
+    const a = new ChatGPTAuth("AT", null, null);
+    expect(() => a.save()).toThrow();
   });
 });
 
@@ -299,6 +360,16 @@ describe("ChatGPTAuth.refresh", () => {
     const fakeFetch = (async () => new Response(JSON.stringify({ error: "invalid_grant" }), { status: 400 })) as FetchLike;
     const a = new ChatGPTAuth("AT", "RT", null);
     await expect(a.refresh(fakeFetch)).rejects.toThrow();
+  });
+
+  test("throws when access_token is absent from the response, and never persists a broken file", async () => {
+    // Python indexes body["access_token"] (KeyError if absent), not
+    // .get() -- a response lacking the key must crash loudly rather than
+    // silently writing `undefined` (dropped by JSON.stringify) to disk.
+    const fakeFetch = (async () => new Response(JSON.stringify({ refresh_token: "x" }), { status: 200 })) as FetchLike;
+    const a = new ChatGPTAuth("OLDAT", "OLDRT", null);
+    await expect(a.refresh(fakeFetch)).rejects.toThrow();
+    expect(fs.existsSync(authPath())).toBe(false);
   });
 });
 

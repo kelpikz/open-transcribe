@@ -48,29 +48,38 @@ export function authPath(): string {
   return path.join(codexHome(), "auth.json");
 }
 
+// Python's float() string grammar accepts a digit run with single
+// underscores between digits (PEP 515: "1_000" -> 1000.0, but not "1__000"
+// or "_1000" or "1000_"), on either side of an optional decimal point, plus
+// an optional exponent with the same underscore rule.
+const PY_FLOAT_DIGITS = String.raw`\d(?:_?\d)*`;
+const PY_FLOAT_NUMBER = new RegExp(
+  `^(?:${PY_FLOAT_DIGITS}(?:\\.(?:${PY_FLOAT_DIGITS})?)?|\\.${PY_FLOAT_DIGITS})(?:[eE][+-]?${PY_FLOAT_DIGITS})?$`,
+);
+
 /**
  * Mimic Python's `float()` coercion closely enough for JWT `exp` claims:
  * accepts numbers, booleans (as 1/0, since Python bool is an int subclass),
- * and numeric strings (including leading/trailing whitespace); throws for
- * anything else, exactly as `float(...)` raises `TypeError`/`ValueError`.
+ * and numeric strings — including leading/trailing whitespace, a leading
+ * sign, PEP-515 underscore separators, and case-insensitive
+ * inf/infinity/nan — exactly as `float(...)` does; throws for anything
+ * else, exactly as `float(...)` raises `TypeError`/`ValueError`.
  */
 function pyFloat(value: unknown): number {
-  if (typeof value === "number") {
-    if (Number.isNaN(value)) return value; // float('nan') round-trips
-    return value;
-  }
+  if (typeof value === "number") return value; // NaN round-trips, like float('nan')
   if (typeof value === "boolean") return value ? 1 : 0;
   if (typeof value === "string") {
     const trimmed = value.trim();
     if (trimmed === "") throw new Error("could not convert string to float: ''");
-    // Number() accepts things float() would reject (hex "0x1", "" -> 0,
-    // hence the explicit empty check above) and rejects things float()
-    // would accept (Python's "inf"/"nan" need no special-casing here since
-    // no fixture exercises them) — close enough for JWT numeric claims.
-    if (!/^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(trimmed)) {
+    const sign = trimmed[0] === "-" ? -1 : 1;
+    const unsigned = trimmed[0] === "+" || trimmed[0] === "-" ? trimmed.slice(1) : trimmed;
+    const lower = unsigned.toLowerCase();
+    if (lower === "inf" || lower === "infinity") return sign * Infinity;
+    if (lower === "nan") return NaN; // sign is irrelevant for nan
+    if (!PY_FLOAT_NUMBER.test(unsigned)) {
       throw new Error(`could not convert string to float: ${JSON.stringify(value)}`);
     }
-    return Number(trimmed);
+    return sign * Number(unsigned.replace(/_/g, ""));
   }
   throw new Error("float() argument must be a string or a number");
 }
@@ -98,6 +107,39 @@ export function jwtExp(token: string): number | null {
     // Python: `except Exception: return None` — swallow anything.
     return null;
   }
+}
+
+/**
+ * Mimic Python's truthiness for arbitrary JSON-decoded values: `None`,
+ * `False`, `0`/`0.0`, `""`, `[]`, and `{}` are falsy; everything else
+ * (including NaN and non-empty containers) is truthy. JS truthiness agrees
+ * for scalars but disagrees for empty arrays/objects, which are always
+ * truthy in JS — that gap is exactly what `raw.get("tokens") or {}` and
+ * `if not access:` in the Python source rely on.
+ */
+function pyTruthy(value: unknown): boolean {
+  if (value === null || value === undefined || value === false) return false;
+  if (typeof value === "number") return value !== 0; // NaN !== 0 -> truthy, matching bool(float('nan'))
+  if (typeof value === "string") return value.length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === "object") return Object.keys(value).length > 0;
+  return true;
+}
+
+/** True for a JSON-decoded plain object (not null, not an array). */
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+/** Best-effort Python type name for a JSON-decoded value, for error text. */
+function pyTypeName(value: unknown): string {
+  if (value === null || value === undefined) return "NoneType";
+  if (Array.isArray(value)) return "list";
+  if (typeof value === "string") return "str";
+  if (typeof value === "boolean") return "bool";
+  if (typeof value === "number") return "float";
+  if (typeof value === "object") return "dict";
+  return typeof value;
 }
 
 export interface ChatGPTAuthInit {
@@ -145,33 +187,58 @@ export class ChatGPTAuth implements AuthLike {
       );
     }
     const raw = JSON.parse(fs.readFileSync(p, "utf-8")) as AuthFile;
-    const tokens: StoredTokens = raw.tokens ?? {};
-    const access = tokens.access_token;
-    if (!access) {
+    // Python: raw.get("tokens") or {} — an OR fallback, not a null check, so
+    // any falsy "tokens" value (missing, null, "", 0, [], {}) becomes {},
+    // while a truthy-but-non-dict value (e.g. a non-empty string or list)
+    // is passed straight through and blows up on the next line, same as
+    // calling .get() on it here would.
+    const rawTokens: unknown = raw.tokens;
+    const tokens: unknown = pyTruthy(rawTokens) ? rawTokens : {};
+    if (!isPlainRecord(tokens)) {
+      // Python: AttributeError, e.g. 'str' object has no attribute 'get'
+      throw new TypeError(`'${pyTypeName(tokens)}' object has no attribute 'get'`);
+    }
+    const access = (tokens as StoredTokens).access_token;
+    if (!pyTruthy(access)) {
       throw new Error(
         `${p} has no ChatGPT access_token (API-key-only login?).\n` +
           "Run `codex login` and choose 'Sign in with ChatGPT'.",
       );
     }
     return new ChatGPTAuth(
-      access,
-      tokens.refresh_token ?? null,
-      tokens.account_id ?? null,
-      tokens.id_token ?? null,
+      access as string,
+      (tokens.refresh_token as string | null | undefined) ?? null,
+      (tokens.account_id as string | null | undefined) ?? null,
+      (tokens.id_token as string | null | undefined) ?? null,
     );
   }
 
   save(): void {
     const p = authPath();
-    const raw: AuthFile = fs.existsSync(p) ? (JSON.parse(fs.readFileSync(p, "utf-8")) as AuthFile) : {};
-    const existingTokens: StoredTokens = raw.tokens ?? {};
-    raw.tokens = {
-      ...existingTokens,
+    const raw: unknown = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, "utf-8")) : {};
+    // Python: raw.setdefault("tokens", {}) requires raw itself to be a
+    // dict; a top-level list/str/number/bool/null raises AttributeError
+    // before "tokens" is even considered.
+    if (!isPlainRecord(raw)) {
+      throw new TypeError(`'${pyTypeName(raw)}' object has no attribute 'setdefault'`);
+    }
+    // Python: raw.setdefault("tokens", {}) only substitutes {} when the KEY
+    // IS ABSENT — unlike load()'s `.get() or {}`, this is presence-based,
+    // not truthiness-based, so an explicit null/0/"" left in the file is
+    // passed straight to .update() and blows up there instead of being
+    // quietly replaced.
+    const hasTokensKey = Object.prototype.hasOwnProperty.call(raw, "tokens");
+    const tokens: unknown = hasTokensKey ? raw.tokens : {};
+    if (!isPlainRecord(tokens)) {
+      throw new TypeError(`'${pyTypeName(tokens)}' object has no attribute 'update'`);
+    }
+    Object.assign(tokens, {
       access_token: this.access_token,
       refresh_token: this.refresh_token,
       account_id: this.account_id,
       id_token: this.id_token,
-    };
+    });
+    raw.tokens = tokens;
     raw.last_refresh = formatUtcTimestamp(new Date());
     // Python: json.dumps(raw, indent=2)
     fs.writeFileSync(p, JSON.stringify(raw, null, 2), "utf-8");
@@ -214,16 +281,18 @@ export class ChatGPTAuth implements AuthLike {
     if (!res.ok) {
       throw new Error(`HTTP ${res.status} ${res.statusText} from ${TOKEN_URL}`);
     }
-    const body = (await res.json()) as {
-      access_token: string;
-      refresh_token?: string | null;
-      id_token?: string | null;
-    };
-    this.access_token = body.access_token;
+    const body = (await res.json()) as Record<string, unknown>;
+    // Python: body["access_token"] — dict indexing, not .get(), so an
+    // absent key raises KeyError uncaught rather than silently assigning
+    // undefined (which would otherwise vanish from the next save() write).
+    if (!("access_token" in body)) {
+      throw new Error("'access_token'");
+    }
+    this.access_token = body.access_token as string;
     // Python: body.get("refresh_token", self.refresh_token) — falls back to
     // the existing value only when the KEY IS ABSENT, not when it's null.
-    this.refresh_token = "refresh_token" in body ? (body.refresh_token ?? null) : this.refresh_token;
-    this.id_token = "id_token" in body ? (body.id_token ?? null) : this.id_token;
+    this.refresh_token = "refresh_token" in body ? ((body.refresh_token as string | null) ?? null) : this.refresh_token;
+    this.id_token = "id_token" in body ? ((body.id_token as string | null) ?? null) : this.id_token;
     this.save();
     return this;
   }
