@@ -327,6 +327,27 @@ describe("transcribeAudio language handling", () => {
     return form as FormData;
   }
 
+  test("defaults to 'en' when the language key is absent entirely from options", async () => {
+    // transcribeAudio's own default (Python: language: str | None = "en")
+    // only substitutes when the caller omits the key entirely -- distinct
+    // from omitLanguage's null/"auto"/"" handling below. Build the options
+    // object without a `language` property at all (not `language: undefined`,
+    // which still adds the key) to exercise the hasOwnProperty branch.
+    let form: FormData | undefined;
+    const fakeFetch = (async (_url: string | URL, init?: RequestInit) => {
+      form = init?.body as FormData;
+      return new Response(JSON.stringify({ text: "x" }), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const options: TranscribeOptions = { filename: "f.wav", content_type: "audio/wav" };
+    expect("language" in options).toBe(false);
+    await transcribeAudio(new TextEncoder().encode("data"), options, {
+      authLoad: () => stubAuth(),
+      fetchImpl: fakeFetch,
+    });
+    expect(form?.get("language")).toBe("en");
+  });
+
   test("null omits the language field", async () => {
     const form = await capturedForm(null);
     expect(form.has("language")).toBe(false);

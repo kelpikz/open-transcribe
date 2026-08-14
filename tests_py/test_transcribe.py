@@ -305,6 +305,30 @@ def test_transcription_error_is_a_runtime_error():
 # -------------------------------------------------------------------- language
 
 
+def test_transcribe_audio_defaults_language_to_en_when_kwarg_omitted(monkeypatch, stub_auth):
+    # transcribe_audio's own signature default (language: str | None = "en")
+    # only substitutes when the caller omits the kwarg entirely -- distinct
+    # from transcribe_file's identical-looking default one layer up. Every
+    # existing caller (transcribe_file, tools/gen_fixtures.py) always passes
+    # language= explicitly, so this path was previously untested.
+    captured = {}
+
+    class _Resp:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"text": "x"}
+
+    def fake_post(url, **kw):
+        captured["form"] = kw.get("data")
+        return _Resp()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    tr.transcribe_audio(b"data", filename="f.wav", content_type="audio/wav")
+    assert captured["form"] == {"language": "en"}
+
+
 def test_language_none_omits_form_field(monkeypatch, stub_auth):
     captured = {}
 

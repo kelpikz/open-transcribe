@@ -110,8 +110,16 @@ export async function transcribeAudio(
 
   const url = `${chatgptBaseUrl()}${TRANSCRIBE_URL_SUFFIX}`;
 
+  // Python: def transcribe_audio(data, *, filename, content_type, language: str | None = "en")
+  // The "en" default only substitutes when the caller omits the `language`
+  // kwarg entirely; an explicit null/undefined must be forwarded as-is (and
+  // then omitted below by the ordinary falsy check), exactly as
+  // transcribeFile's own default already does one level up. Using
+  // `options.language ?? DEFAULT_LANGUAGE` here would collapse "key absent"
+  // and "key present but null/undefined" into the same case, which Python's
+  // default-argument semantics do not.
+  const language = Object.prototype.hasOwnProperty.call(options, "language") ? options.language : DEFAULT_LANGUAGE;
   // Python: form = {} if not language or language == "auto" else {"language": language}
-  const language = options.language;
   const omitLanguage = !language || language === "auto";
 
   const form = new FormData();
