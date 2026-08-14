@@ -8,3 +8,4 @@ node_modules/
 ts/node_modules/
 dist/
 .tmp_codex-src
+.claude/

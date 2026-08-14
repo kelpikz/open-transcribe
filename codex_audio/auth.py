@@ -139,6 +139,25 @@ class ChatGPTAuth:
             h["ChatGPT-Account-Id"] = self.account_id
         return h
 
+    def transcription_headers(self) -> dict[str, str]:
+        """Headers used by Codex Desktop's `/transcribe` upload route.
+
+        This route is separate from realtime conversation.  The desktop app
+        identifies the upload as a Codex attachment and uses the desktop
+        originator, while authentication still comes from the Codex login.
+        """
+        h = {
+            "Authorization": f"Bearer {self.access_token}",
+            "User-Agent": "codex-audio/0.1 (reverse-engineered from Codex Desktop)",
+            "ChatGPT-Account-Id": self.account_id or "",
+            "originator": "Codex Desktop",
+            "x-codex-base64": "1",
+            "X-OpenAI-Attach-Auth": "1",
+            "X-OpenAI-Attach-Desktop-Surface": "Codex Desktop",
+            "X-OpenAI-Attach-Integrity-State": "1",
+        }
+        return {key: value for key, value in h.items() if value}
+
 
 def chatgpt_base_url() -> str:
     return os.environ.get("CODEX_CHATGPT_BASE_URL", DEFAULT_CHATGPT_BASE_URL).rstrip("/")

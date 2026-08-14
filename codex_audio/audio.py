@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import fractions
+import io
+import sys
+import wave
 
 import av
 import numpy as np
@@ -81,6 +84,41 @@ def file_track(path: str) -> MediaStreamTrack:
     # Keep the player alive as long as the track is.
     player.audio._player_ref = player  # type: ignore[attr-defined]
     return player.audio
+
+
+async def record_microphone(device: int | str | None = None) -> bytes:
+    """Record from the microphone until stdin receives a line, as a WAV file."""
+    chunks: list[np.ndarray] = []
+
+    def on_audio(indata, _frames, _time_info, _status) -> None:
+        chunks.append(indata.copy())
+
+    stream = sd.InputStream(
+        samplerate=24_000,
+        channels=1,
+        dtype="int16",
+        blocksize=2_400,
+        device=device,
+        callback=on_audio,
+    )
+    stream.start()
+    try:
+        await asyncio.to_thread(sys.stdin.readline)
+    finally:
+        stream.stop()
+        stream.close()
+
+    if not chunks:
+        raise RuntimeError("no audio was captured")
+
+    pcm = np.concatenate(chunks, axis=0).astype("<i2", copy=False).tobytes()
+    output = io.BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(24_000)
+        wav.writeframes(pcm)
+    return output.getvalue()
 
 
 def list_devices() -> str:

@@ -1,17 +1,9 @@
-"""Realtime transcription over WebRTC, against the endpoint Codex's mic uses.
+"""Legacy WebRTC realtime client.
 
-Negotiation, as recovered from codex-cli 0.146.0 and confirmed live:
-
-    POST {chatgpt_base_url}/codex/realtime/calls
-    Content-Type: application/json
-    Authorization: Bearer <chatgpt access token>
-    ChatGPT-Account-Id: <account id>
-
-    {"sdp": "<offer>", "session": {"type": "transcription", ...}}
-
-    -> 201, body is the raw SDP answer
-
-Transcripts then arrive as JSON events on the `oai-events` data channel.
+The Codex Desktop composer microphone does not use this route.  It uploads a
+completed recording to `/backend-api/transcribe`; the realtime WebRTC call
+endpoint retained here currently returns 404.  The CLI uses :mod:`transcribe`
+instead, while this module remains as a record of the older protocol.
 """
 
 from __future__ import annotations

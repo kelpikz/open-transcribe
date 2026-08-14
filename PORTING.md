@@ -5,20 +5,19 @@ to establish; rediscovering them costs hours.
 
 ## Ground truth you must not relitigate
 
-**The live endpoint is dead.** `POST https://chatgpt.com/backend-api/codex/realtime/calls`
-returns `404 {"detail":"Not Found"}` as of 2026-08-14. This is *not* an auth
-problem — the same token returns `200` on `/backend-api/me`, `/accounts/check/v4-2023-04-27`
-and `/models`, and `/codex/responses` returns a Codex-specific `400`. Nine path
-variants were probed; all 404.
+**The old realtime WebRTC endpoint is dead.** `POST
+https://chatgpt.com/backend-api/codex/realtime/calls` returns `404
+{"detail":"Not Found"}` as of 2026-08-14. This is *not* an auth problem.
 
-The decision has been made deliberately: **port faithfully anyway, fix the
-endpoint later.** Do not redesign around a different transport, do not try to
-find the new endpoint, do not "improve" the protocol. Port what is there.
+The Codex Desktop composer microphone uses a different, working batch route:
+`POST https://chatgpt.com/backend-api/transcribe`, with a multipart `file` and
+optional `language` field. The Python CLI now follows that route. The old
+`realtime.py` implementation remains only as legacy protocol reference; do not
+assume its WebRTC negotiation can be verified against the service.
 
-Consequence: `negotiate()` and anything downstream of it cannot be verified
-against the service. Do not write tests that hit the network. Test the
-request *construction* and the event *handling*, which is where port
-regressions actually live.
+For the TypeScript port, decide whether the target is the working Desktop
+dictation route (`transcribe.ts`) or the legacy realtime module. Do not claim
+that `/codex/realtime/calls` is the route used by the current Desktop mic.
 
 ## Rules
 

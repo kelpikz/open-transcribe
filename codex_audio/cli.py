@@ -7,15 +7,13 @@ import asyncio
 import json
 import sys
 
-from .audio import MicrophoneTrack, file_track, list_devices
-from .auth import ChatGPTAuth
-from .realtime import (
+from .audio import list_devices, record_microphone
+from .transcribe import (
     DEFAULT_LANGUAGE,
     DEFAULT_MODEL,
-    DEFAULT_SILENCE_MS,
     TRANSCRIBE_MODELS,
-    RealtimeTranscriber,
-    build_session,
+    transcribe_audio,
+    transcribe_file,
 )
 
 
@@ -99,96 +97,41 @@ class Renderer:
         sys.stderr.flush()
 
 
-async def _run(track, stop_when, args) -> str:
-    auth = ChatGPTAuth.load().ensure_fresh()
-
-    tty = sys.stderr.isatty()
-    render = Renderer(
-        enabled=not args.quiet,
-        interactive=tty and not args.no_partials,
-        color=tty and not args.no_color,
-    )
-
-    on_delta = render.delta
-    on_final = render.final
-
-    on_event = None
-    if args.raw_events:
-        def on_event(event: dict) -> None:  # noqa: F811
-            _err(json.dumps(event)[:600])
-
-    tx = RealtimeTranscriber(
-        auth,
-        session=(
-            json.loads(args.session)
-            if args.session
-            else build_session(
-                args.model,
-                language=None if args.language == "auto" else args.language,
-                prompt=args.prompt,
-                silence_ms=args.silence_ms,
-                vad=args.stream,
-                noise_reduction=None if args.noise_reduction == "none" else args.noise_reduction,
-            )
-        ),
-        on_delta=on_delta,
-        on_final=on_final,
-        on_event=on_event,
-    )
-
-    await tx.connect(track)
-    await tx.wait_until_open()
-    if not args.quiet:
-        _err("~ connected, listening ~")
-
-    try:
-        await stop_when()
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        pass
-    finally:
-        # Speech already in flight still has to come back down the wire.
-        if args.drain > 0:
-            await asyncio.sleep(args.drain)
-        # Flush whatever audio is still uncommitted. Required in --single mode
-        # (nothing is transcribed until asked), and it also rescues the tail in
-        # VAD mode: when input stops the server never sees the trailing silence
-        # that would have closed the last segment, so it would be lost.
-        if not args.quiet and not args.stream:
-            render.status("transcribing…")
-        try:
-            await tx.commit()
-        except Exception:
-            pass
-        try:
-            track.stop()
-        except Exception:
-            pass
-        await tx.close()
-        render.done()
-
-    return tx.transcript.text
+def _render_final(text: str, args) -> None:
+    if args.quiet:
+        return
+    render = Renderer(enabled=True, interactive=False, color=sys.stderr.isatty() and not args.no_color)
+    render.final(text)
+    render.done()
 
 
 async def _mic_main(args) -> str:
-    track = MicrophoneTrack(device=args.device)
-
-    async def stop_when() -> None:
-        if not args.quiet:
-            _err("Recording — press Enter to stop.")
-        await asyncio.to_thread(sys.stdin.readline)
-
-    return await _run(track, stop_when, args)
+    if not args.quiet:
+        _err("Recording — press Enter to stop.")
+    data = await record_microphone(device=args.device)
+    if not args.quiet:
+        _err("transcribing…")
+    text = await asyncio.to_thread(
+        transcribe_audio,
+        data,
+        filename="codex-audio.wav",
+        content_type="audio/wav",
+        language=None if args.language == "auto" else args.language,
+    )
+    _render_final(text, args)
+    return text
 
 
 async def _file_main(args) -> str:
-    track = file_track(args.input)
-
-    async def stop_when() -> None:
-        # MediaPlayer flips the track to "ended" when the file runs out.
-        while track.readyState != "ended":
-            await asyncio.sleep(0.2)
-
-    return await _run(track, stop_when, args)
+    if not args.quiet:
+        _err("transcribing…")
+    text = await asyncio.to_thread(
+        transcribe_file,
+        args.input,
+        language=None if args.language == "auto" else args.language,
+    )
+    _render_final(text, args)
+    return text
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -201,7 +144,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--model",
         default=DEFAULT_MODEL,
-        help=f"transcription model (default: {DEFAULT_MODEL}; known good: {', '.join(TRANSCRIBE_MODELS)})",
+        help=(
+            f"compatibility option; desktop endpoint chooses the model "
+            f"(default: {DEFAULT_MODEL}; known: {', '.join(TRANSCRIBE_MODELS)})"
+        ),
     )
     p.add_argument("--list-devices", action="store_true", help="list audio input devices and exit")
     p.add_argument(
@@ -217,22 +163,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--stream",
         action="store_true",
-        help="segment while you speak, for live partial transcripts. Less accurate: "
-        "each segment is transcribed in isolation. Default is whole-utterance, as Codex does",
+        help="compatibility option; upload transcription returns one final transcript",
     )
     p.add_argument(
         "--silence-ms",
         type=int,
-        default=DEFAULT_SILENCE_MS,
-        help=f"--stream only: pause length that ends a segment, in ms "
-        f"(default: {DEFAULT_SILENCE_MS}; raise it if sentences get chopped up)",
+        default=500,
+        help="compatibility option; upload transcription is not streamed",
     )
     p.add_argument(
         "--noise-reduction",
         choices=["near_field", "far_field", "none"],
         default="none",
-        help="mic noise profile: near_field for a headset, far_field for a room mic "
-        "(default: none, matching Codex)",
+        help="compatibility option; noise reduction is selected by the desktop service",
     )
     p.add_argument("--json", action="store_true", help="emit JSON instead of plain text")
     p.add_argument("--quiet", "-q", action="store_true", help="no progress output on stderr")
@@ -240,13 +183,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--no-partials", action="store_true", help="show only settled segments, not live guesses"
     )
     p.add_argument("--no-color", action="store_true", help="disable ANSI colour")
-    p.add_argument("--raw-events", action="store_true", help="dump every protocol event to stderr")
-    p.add_argument("--session", help="override the session JSON sent at negotiation")
+    p.add_argument("--raw-events", action="store_true", help="compatibility option; upload has no protocol events")
+    p.add_argument("--session", help="compatibility option; upload has no session JSON")
     p.add_argument(
         "--drain",
         type=float,
         default=2.0,
-        help="seconds to keep listening after stop, for in-flight audio (default: 2)",
+        help="compatibility option; upload has no in-flight drain",
     )
     return p
 
@@ -260,6 +203,10 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.device and args.device.isdigit():
         args.device = int(args.device)
+
+    if args.stream:
+        _err("--stream is unavailable: the Codex Desktop upload route returns one final transcript.")
+        return 2
 
     try:
         runner = _file_main if args.input else _mic_main
