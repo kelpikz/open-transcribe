@@ -360,8 +360,20 @@ class RawPcmCaptureSession implements AsyncDisposable {
         if (done) break;
         if (value) this.chunks.push(value);
       }
+    } catch {
+      // A broken/errored stdout pipe (e.g. ffmpeg killed abruptly, device
+      // disconnected mid-capture) just means no more PCM will arrive --
+      // whatever was captured so far is still usable. Swallow rather than
+      // rejecting drainTask, which stop() awaits: an unswallowed rejection
+      // here would propagate out of stop()/recordMicrophone() as a raw
+      // stream error instead of either succeeding or reporting the
+      // cleaner "no audio was captured".
     } finally {
-      reader.releaseLock();
+      try {
+        reader.releaseLock();
+      } catch {
+        // already released/errored
+      }
     }
   }
 
