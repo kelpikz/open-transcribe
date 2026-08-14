@@ -332,6 +332,23 @@ def test_refresh_falls_back_to_existing_refresh_token_and_id_token_when_absent(m
     assert a.id_token == "OLDIT"  # unchanged
 
 
+def test_refresh_uses_explicit_null_over_existing_value(monkeypatch, tmp_path):
+    # dict.get("k", default) returns None (not default) when the key is
+    # present with an explicit null value -- only an ABSENT key falls back.
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+
+    def fake_post(url, json=None, timeout=None):
+        return _FakeResponse({"access_token": "NEWAT", "refresh_token": None, "id_token": None})
+
+    monkeypatch.setattr(auth_mod.httpx, "post", fake_post)
+
+    a = auth_mod.ChatGPTAuth(access_token="OLDAT", refresh_token="OLDRT", account_id="ACC", id_token="OLDIT")
+    a.refresh()
+
+    assert a.refresh_token is None
+    assert a.id_token is None
+
+
 def test_refresh_raises_on_http_error_status(monkeypatch, tmp_path):
     monkeypatch.setenv("CODEX_HOME", str(tmp_path))
 
