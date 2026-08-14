@@ -27,6 +27,10 @@ Use the active voice. Use the simple present tense. Keep each entry short.
   correct after you delete the Python code.
 - The Python code changed to the upload route. After this change, all 11 of
   the first fixtures are identical. The change only added code.
+- A test for a resource leak must have a margin that is larger than the leak.
+  One test did one operation and permitted one more socket. The error also
+  made one more socket. Thus the test gave a pass result with the bad code.
+  Do 5 operations at the same time. Then the signal is larger than the margin.
 
 ## auth
 
@@ -102,6 +106,30 @@ Use the active voice. Use the simple present tense. Keep each entry short.
 - The Python code sets `player.audio._player_ref = player`. This keeps the
   player in memory. In TypeScript, the ffmpeg process must continue while the
   track is live.
+- `Promise.race` does not stop the branch that loses. The caller must release
+  the resources of that branch.
+- The `readline` interface adds `data`, `end`, and `error` listeners to
+  `process.stdin`. Only `rl.close()` removes these listeners. If ffmpeg stops
+  first, the listeners stay for the life of the process. The count increased
+  from 0 to 2 in 3 calls. A garbage collection does not remove them. Thus
+  `waitForStdinLine()` returns a `cancel` function. `recordMicrophone()` calls
+  `cancel` in a `finally` block.
+- `Bun.spawn` can stop with an error immediately. If this happens after the
+  UDP socket is open, the socket stays open. There is no reference to it. Put
+  `Bun.spawn` in a `try/catch` block. Close the socket in the `catch` block.
+- There are two different socket errors. One error occurs when the bind
+  operation fails. The other error occurs when the bind operation is good, but
+  `Bun.spawn` fails. You must correct both errors.
+- When a file comes to its end, the old code closed only the queue. It did not
+  close the socket or the track. Thus `readyState` showed `"ended"`, but the
+  resources stayed open. Send the natural end through the same `stop()`
+  function. `stop()` operates correctly more than one time.
+- The werift functions `writeRtp` and `stop` are synchronous. `writeRtp` also
+  tests the `stopped` flag before it uses the packet. Thus there is no race
+  condition between these two functions.
+- If `reader.read()` in `drain()` gives an error, the error goes out of
+  `recordMicrophone()`. The audio data is then lost. The Python code has the
+  same condition. This is not a new error.
 
 ## cli
 
