@@ -314,6 +314,39 @@ export class ChatGPTAuth implements AuthLike {
     }
     return h;
   }
+
+  /**
+   * Headers used by Codex Desktop's `/transcribe` upload route.
+   *
+   * This route is separate from realtime conversation. The desktop app
+   * identifies the upload as a Codex attachment and uses the desktop
+   * originator, while authentication still comes from the Codex login.
+   *
+   * Ported from `ChatGPTAuth.transcription_headers()` in `codex_audio/auth.py`
+   * — added here (rather than left absent) because `transcribe.ts` requires
+   * it and no other module in this port defines it.
+   */
+  transcriptionHeaders(): Record<string, string> {
+    const h: Record<string, string> = {
+      Authorization: `Bearer ${this.access_token}`,
+      "User-Agent": "codex-audio/0.1 (reverse-engineered from Codex Desktop)",
+      // Python: self.account_id or "" — always present as a key pre-filter,
+      // even when falsy, unlike headers()'s conditional assignment above.
+      "ChatGPT-Account-Id": this.account_id || "",
+      originator: "Codex Desktop",
+      "x-codex-base64": "1",
+      "X-OpenAI-Attach-Auth": "1",
+      "X-OpenAI-Attach-Desktop-Surface": "Codex Desktop",
+      "X-OpenAI-Attach-Integrity-State": "1",
+    };
+    // Python: {key: value for key, value in h.items() if value} — drops any
+    // falsy value (in practice, only an empty ChatGPT-Account-Id).
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(h)) {
+      if (value) out[key] = value;
+    }
+    return out;
+  }
 }
 
 export function chatgptBaseUrl(): string {
