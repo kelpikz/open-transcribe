@@ -77,6 +77,19 @@ describe("contentTypeFor", () => {
     expect(contentTypeFor("a.WAV")).toBe(contentTypeFor("a.wav"));
     expect(contentTypeFor("UPPER.MP3")).toBe("audio/mpeg");
   });
+
+  test("a name that is all dots before the extension has no suffix (pathlib lstrip semantics)", () => {
+    // pathlib.PurePath.suffix does name.lstrip('.') before finding the last
+    // dot, so ALL leading dots are stripped -- not just one. Node's
+    // path.extname() only special-cases a single leading dot, so a naive
+    // port using extname() directly would misclassify these as "audio/wav".
+    // Confirmed directly against a live Python interpreter.
+    expect(contentTypeFor("..wav")).toBe("application/octet-stream");
+    expect(contentTypeFor("...wav")).toBe("application/octet-stream");
+    expect(contentTypeFor("....wav")).toBe("application/octet-stream");
+    // A real (non-dot) leading character makes it an ordinary case again.
+    expect(contentTypeFor("a...wav")).toBe("audio/wav");
+  });
 });
 
 // --------------------------------------------------------- transcriptionHeaders
@@ -210,6 +223,33 @@ describe("transcribeAudio errors", () => {
     expect(msg).toContain("/transcribe: ");
     expect(msg.endsWith("x".repeat(500))).toBe(true);
     expect(msg.split(": ")[1]?.length).toBe(500);
+  });
+
+  test("truncation slices by Unicode codepoint, not UTF-16 code unit", async () => {
+    // Python's response.text[:500] indexes by Unicode code point. A naive
+    // JS `.slice(0, 500)` indexes by UTF-16 code unit and would cut through
+    // an astral-plane character's surrogate pair if it straddles the
+    // boundary, producing a lone unpaired surrogate. Pinned against real
+    // Python output: for "a"*499 + <emoji> + "b"*20, Python's [:500] keeps
+    // exactly 500 codepoints, ending in the whole emoji, with no "b".
+    const body = "a".repeat(499) + "\u{1F600}" + "b".repeat(20);
+    const fakeFetch = (async () => new Response(body, { status: 500 })) as unknown as typeof fetch;
+
+    let caught: unknown;
+    try {
+      await transcribeAudio(
+        new TextEncoder().encode("data"),
+        { filename: "f.wav", content_type: "audio/wav" },
+        { authLoad: () => stubAuth(), fetchImpl: fakeFetch },
+      );
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeInstanceOf(TranscriptionError);
+    const snippet = (caught as Error).message.split(": ")[1] as string;
+    expect(Array.from(snippet).length).toBe(500);
+    expect(snippet.endsWith("\u{1F600}")).toBe(true);
+    expect(snippet.includes("b")).toBe(false);
   });
 
   test("raises with short body verbatim", async () => {

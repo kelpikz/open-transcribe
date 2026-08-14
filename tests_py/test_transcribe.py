@@ -58,6 +58,20 @@ def test_content_type_for_is_case_insensitive_on_extension():
     assert tr.content_type_for("UPPER.MP3") == "audio/mpeg"
 
 
+def test_content_type_for_all_dots_before_extension_has_no_suffix():
+    # pathlib.PurePath.suffix does `name.lstrip('.')` BEFORE looking for the
+    # last dot -- so a name that is entirely dots up to the extension has
+    # every leading dot stripped, leaving no "." at all, and therefore no
+    # suffix. This is easy to get wrong by reaching for a basename/extname
+    # helper that only special-cases a single leading dot (dotfiles like
+    # ".bashrc") rather than stripping all of them.
+    assert tr.content_type_for("..wav") == "application/octet-stream"
+    assert tr.content_type_for("...wav") == "application/octet-stream"
+    assert tr.content_type_for("....wav") == "application/octet-stream"
+    # A real (non-dot) leading character makes it an ordinary case again.
+    assert tr.content_type_for("a...wav") == "audio/wav"
+
+
 # ------------------------------------------------------------------- auth stub
 
 
@@ -202,6 +216,31 @@ def test_transcribe_audio_raises_on_non_200_with_truncated_body(monkeypatch, stu
     # Body truncated to 500 chars.
     assert msg.endswith("x" * 500)
     assert len(msg.rsplit(": ", 1)[1]) == 500
+
+
+def test_transcribe_audio_truncation_slices_by_unicode_codepoint(monkeypatch, stub_auth):
+    # Python strings index by Unicode code point, not UTF-16 code unit, so
+    # response.text[:500] on a body with an astral-plane character (e.g. an
+    # emoji outside the Basic Multilingual Plane) straddling the boundary
+    # keeps the character whole rather than splitting its surrogate pair.
+    # This pins the exact codepoint count so a naive UTF-16-based port
+    # (JS's String.prototype.slice) can be checked against it.
+    body = "a" * 499 + "\U0001F600" + "b" * 20
+
+    class _Resp:
+        status_code = 500
+        text = body
+
+        def json(self):
+            raise AssertionError
+
+    monkeypatch.setattr(httpx, "post", lambda url, **kw: _Resp())
+    with pytest.raises(tr.TranscriptionError) as ei:
+        tr.transcribe_audio(b"data", filename="f.wav", content_type="audio/wav")
+    snippet = str(ei.value).split(": ", 1)[1]
+    assert len(snippet) == 500
+    assert snippet.endswith("\U0001F600")
+    assert "b" not in snippet
 
 
 def test_transcribe_audio_raises_on_non_200_short_body(monkeypatch, stub_auth):

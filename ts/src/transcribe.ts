@@ -28,6 +28,21 @@ export const DEFAULT_LANGUAGE = "en";
 export const DEFAULT_MODEL = "gpt-4o-transcribe";
 export const TRANSCRIBE_MODELS = ["gpt-4o-transcribe", "gpt-4o-mini-transcribe", "whisper-1"];
 
+/**
+ * Python: `response.text[:500]` — Python strings index by Unicode code
+ * point, not UTF-16 code unit. JS's `String.prototype.slice` indexes by
+ * UTF-16 code unit, so for a body containing an astral-plane character
+ * (outside the Basic Multilingual Plane, e.g. most emoji) straddling the
+ * 500th unit, a plain `.slice(0, 500)` would cut through a surrogate pair,
+ * producing a lone unpaired surrogate — invalid as a standalone string and
+ * not what Python would ever produce. Iterating the string (`for...of` /
+ * `Array.from`, which both walk by code point) and slicing there reproduces
+ * Python's semantics exactly, including at that boundary.
+ */
+function codepointSlice(s: string, end: number): string {
+  return Array.from(s).slice(0, end).join("");
+}
+
 /** The ChatGPT transcription service rejected or malformed a request. */
 export class TranscriptionError extends Error {
   constructor(message: string) {
@@ -67,12 +82,31 @@ const GUESSED_AUDIO_CONTENT_TYPES: Record<string, string> = {
   ".aiff": "audio/aiff",
 };
 
+/**
+ * Python: `pathlib.PurePath.suffix` — `name = self.name.lstrip('.')` (ALL
+ * leading dots stripped, not just one), then the last `.` onward in what
+ * remains, or `""` if none remains.
+ *
+ * Deliberately NOT `path.extname()`: Node's `extname` only special-cases a
+ * *single* leading dot (so ".bashrc" -> "", matching Python), but for two or
+ * more leading dots it diverges — `extname("..wav")` is ".wav", while
+ * Python's `Path("..wav").suffix` is `""` (lstrip consumes both dots,
+ * leaving "wav" with no "." at all). Confirmed directly against a live
+ * Python interpreter: `Path("..wav").suffix == Path("...wav").suffix == ""`,
+ * but `Path("a...wav").suffix == ".wav"` (a real, non-dot leading character
+ * makes the case ordinary again).
+ */
+function pySuffix(p: string): string {
+  const name = path.basename(p);
+  const stripped = name.replace(/^\.+/, "");
+  const i = stripped.lastIndexOf(".");
+  return i === -1 ? "" : stripped.slice(i);
+}
+
 /** Return an audio MIME type suitable for the multipart upload. */
 export function contentTypeFor(p: string): string {
-  // Python: Path(path).suffix.lower() — extension of the final path
-  // component, lowercased; "noextension" and dotfiles with no further dot
-  // (e.g. ".bashrc") both yield "".
-  const suffix = path.extname(p).toLowerCase();
+  // Python: Path(path).suffix.lower()
+  const suffix = pySuffix(p).toLowerCase();
   const known = KNOWN_CONTENT_TYPES[suffix];
   if (known !== undefined) return known;
   const guessed = GUESSED_AUDIO_CONTENT_TYPES[suffix];
@@ -149,7 +183,7 @@ export async function transcribeAudio(
 
   if (res.status !== 200) {
     const bodyText = await res.text();
-    throw new TranscriptionError(`${res.status} from ${url}: ${bodyText.slice(0, 500)}`);
+    throw new TranscriptionError(`${res.status} from ${url}: ${codepointSlice(bodyText, 500)}`);
   }
 
   // Python: try: body = response.json(); text = body["text"]
