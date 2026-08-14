@@ -417,6 +417,33 @@ def test_transcribe_file_passes_language_through(monkeypatch, stub_auth, tmp_pat
     assert captured["form"] == {"language": "hi"}
 
 
+def test_transcribe_file_explicit_none_language_omits_form_field(monkeypatch, stub_auth, tmp_path):
+    # Distinguishes "language kwarg omitted" (defaults to "en") from
+    # "language=None passed explicitly" (forwarded as None, then omitted by
+    # transcribe_audio's own falsy check) -- Python's default-argument
+    # semantics only substitute "en" when the caller doesn't pass the kwarg
+    # at all, not when they pass None.
+    audio_path = tmp_path / "recording.wav"
+    audio_path.write_bytes(b"wav-bytes")
+
+    captured = {}
+
+    class _Resp:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"text": "x"}
+
+    def fake_post(url, **kw):
+        captured["form"] = kw.get("data")
+        return _Resp()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+    tr.transcribe_file(str(audio_path), language=None)
+    assert captured["form"] == {}
+
+
 def test_transcribe_file_default_language_is_en(monkeypatch, stub_auth, tmp_path):
     audio_path = tmp_path / "recording.wav"
     audio_path.write_bytes(b"wav-bytes")
