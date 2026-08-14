@@ -45,13 +45,19 @@ export const FRAME_MS = 20;
 export const SAMPLES_PER_FRAME = (SAMPLE_RATE * FRAME_MS) / 1000; // 960
 
 /**
- * record_microphone()'s sample rate/blocksize in the Python are inline
- * literals (24_000 / 2_400), not module constants -- named here for
- * clarity. Deliberately distinct from SAMPLE_RATE/SAMPLES_PER_FRAME above;
- * do not conflate them (see module docstring in audio.py).
+ * record_microphone()'s sample rate in the Python is an inline literal
+ * (24_000), not a module constant -- named here for clarity. Deliberately
+ * distinct from SAMPLE_RATE/SAMPLES_PER_FRAME above; do not conflate them
+ * (see module docstring in audio.py).
+ *
+ * Python's InputStream also takes blocksize=2_400: how many PCM frames
+ * PortAudio hands the callback per invocation. ffmpeg's raw-PCM stdout pipe
+ * has no equivalent knob -- it streams continuously and the OS pipe buffer
+ * determines how much arrives per read(), which doesn't affect the final
+ * WAV either way since all chunks are concatenated regardless of size. Not
+ * ported as a named constant since nothing in this file consumes it.
  */
 const RECORD_SAMPLE_RATE = 24_000;
-const RECORD_BLOCK_SIZE = 2_400;
 
 // -------------------------------------------------------- drop-oldest queue
 
