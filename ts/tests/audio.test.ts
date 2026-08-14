@@ -287,6 +287,23 @@ describe("fileTrack", () => {
     expect(source.readyState).toBe("ended");
   }, 10_000);
 
+  test("a naturally-exhausted file closes its UDP socket even if the caller never calls stop()", async () => {
+    // Regression: the natural-exit path used to only close the internal
+    // queue, not the dgram socket or the werift track -- so a caller who
+    // trusted readyState === "ended" to mean "fully cleaned up" (a
+    // reasonable reading of the AudioSource contract) would leak a bound
+    // UDP socket on every completed file playback.
+    const before = udpSocketsBoundTo127Count();
+    const source = await fileTrack(SAMPLE_WAV);
+    const pid = (source as unknown as { ffmpegPid: number }).ffmpegPid;
+    await waitUntil(() => source.readyState === "ended", 10_000);
+    // Deliberately do NOT call source.stop() here.
+    await waitUntil(() => !isProcessAlive(pid), 5_000);
+    expect((source.track as MediaStreamTrack).stopped).toBe(true);
+    await new Promise((r) => setTimeout(r, 150)); // let netstat catch up
+    expect(udpSocketsBoundTo127Count()).toBeLessThanOrEqual(before + 1);
+  }, 15_000);
+
   test("stop() before the file finishes still leaves no orphaned process", async () => {
     const source = await fileTrack(SAMPLE_WAV);
     const pid = (source as unknown as { ffmpegPid: number }).ffmpegPid;

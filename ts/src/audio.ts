@@ -487,13 +487,14 @@ export class FfmpegRtpAudioSource implements AudioSource {
     this.queue = queue;
     this.pumpTask = this.pump();
     // Flip to "ended" whenever ffmpeg exits, whether because a file was
-    // exhausted, the process was killed by stop(), or it crashed.
+    // exhausted, the process was killed by stop(), or it crashed. Routing
+    // this through stop() (rather than only closing the queue) matters: a
+    // file that finishes playing naturally must still close the dgram
+    // socket and stop the werift track, or a caller who trusts readyState
+    // ("ended" means done, no need to call stop()) would leak a bound UDP
+    // socket on every completed playback.
     void this.proc.exited.then(() => {
-      this._readyState = "ended";
-      if (!this.stopped) {
-        this.stopped = true;
-        this.queue.close();
-      }
+      this.stop();
     });
   }
 
