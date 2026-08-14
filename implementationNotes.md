@@ -64,6 +64,25 @@ Use the active voice. Use the simple present tense. Keep each entry short.
 - `transcription_headers()` sets `ChatGPT-Account-Id` to `account_id or ""`.
   Then it removes the empty values. Thus, if there is no account id, the
   header is not present. The header is not empty.
+- The Python function `transcribe_audio` has the default value `language="en"`
+  in its signature. If you do not supply the `language` key, the function uses
+  `"en"`. If you supply `None`, the function sends no field. These two
+  conditions are different. Use a key presence test. Do not use a default
+  value for a null result.
+- `Path.suffix` removes all the dots at the start of the name. The Node
+  function `path.extname` removes only one dot. Thus Python finds no suffix in
+  `"..wav"`, but Node finds `.wav`. Use the `pySuffix` function.
+- `response.text[:500]` counts Unicode code points. The JavaScript function
+  `.slice(0, 500)` counts UTF-16 code units. Thus `.slice()` can divide a
+  surrogate pair. Use the `codepointSlice` function.
+- The MIME types for `.opus` and `.aiff` are constant values in the code. They
+  come from the fixture. There is no correct method to do `mimetypes.
+  guess_type` on all systems.
+- The `fetch` function has no timeout option. Use
+  `AbortSignal.timeout(120_000)` in place of the Python `timeout=120`.
+- The auth port was complete before the Python code got
+  `transcription_headers()`. Thus the transcribe agent added
+  `transcriptionHeaders()` to `ts/src/auth.ts`.
 
 ## audio
 
@@ -121,3 +140,7 @@ Use the active voice. Use the simple present tense. Keep each entry short.
   embedded git directory is a gitlink item. A directory pattern does not find
   a gitlink item.
 - The venv comes from uv and has no `pip`. Use `uv pip install`.
+- A review agent can report an error that is not correct. One review said that
+  Python `Path.name` and Node `path.basename` give different results for UNC
+  paths. A test on this computer shows that the two functions agree. Always
+  test a review result before you change the code.
