@@ -336,8 +336,13 @@ function parseFloatStrict(name: string, value: string): number {
 // ---------------------------------------------------------------------------
 
 async function micMain(args: Args): Promise<string> {
-  if (!args.quiet) err("Recording — press Enter to stop.");
-  const data = await recordMicrophone(args.device);
+  if (!args.quiet) err("Opening the microphone…");
+  const data = await recordMicrophone(args.device, {
+    // Only invite speech once the device actually delivers samples.
+    onReady: () => {
+      if (!args.quiet) err("Recording — press Enter to stop.");
+    },
+  });
   if (!args.quiet) err("transcribing…");
   const text = await transcribeAudio(data, {
     filename: "codex-audio.wav",

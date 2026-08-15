@@ -35,8 +35,17 @@ export type Device = string | number | null | undefined;
 // Microphone recording (the path the CLI actually uses)
 // ---------------------------------------------------------------------------
 
-/** Record from the microphone until stdin receives a line, as a WAV file. */
-export async function recordMicrophone(device?: Device): Promise<Uint8Array> {
+/**
+ * Record from the microphone until stdin receives a line, as a WAV file.
+ *
+ * `onReady` fires when the device delivers its first samples. Opening a
+ * capture device is slow — about two seconds for dshow on Windows — so the
+ * caller must not invite speech before this. Anything said earlier is lost.
+ */
+export async function recordMicrophone(
+  device?: Device,
+  options: { onReady?: () => void } = {},
+): Promise<Uint8Array> {
   const ffmpeg = spawnFfmpeg([
     ...micInputArgs(device),
     "-ac",
@@ -49,15 +58,28 @@ export async function recordMicrophone(device?: Device): Promise<Uint8Array> {
   ]);
 
   const chunks: Buffer[] = [];
-  ffmpeg.proc.stdout?.on("data", (chunk: Buffer) => chunks.push(chunk));
+  let markReady = (): void => {};
+	const capturing = new Promise<void>((resolve) => {
+		markReady = resolve;
+	});
+	ffmpeg.proc.stdout?.on("data", (chunk: Buffer) => {
+		console.log("writing to buffer : ", chunk);
+		chunks.push(chunk);
+		markReady();
+	});
 
   try {
-    // Whichever comes first: the user presses Enter, or ffmpeg gives up
-    // (bad device name, no such device, ffmpeg missing).
-    await Promise.race([waitForLine(), ffmpeg.exited]);
-  } finally {
-    ffmpeg.stop();
-  }
+		// Wait for real samples before handing control back, so the prompt to
+		// speak is truthful. If ffmpeg dies first, fall through to the error.
+		await Promise.race([capturing, ffmpeg.exited]);
+		if (chunks.length > 0) options.onReady?.();
+
+		// Whichever comes first: the user presses Enter, or ffmpeg gives up
+		// (bad device name, no such device, ffmpeg missing).
+		await Promise.race([waitForLine(), ffmpeg.exited]);
+	} finally {
+		ffmpeg.stop();
+	}
   await ffmpeg.exited;
 
   if (chunks.length === 0) {
