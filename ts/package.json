@@ -5,6 +5,7 @@
   "private": true,
   "bin": { "codex-audio": "./src/cli.ts" },
   "scripts": {
+    "start": "bun run ./src/cli.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build": "bun build --compile --outfile dist/codex-audio ./src/cli.ts"
