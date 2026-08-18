@@ -63,7 +63,6 @@ export async function recordMicrophone(
 		markReady = resolve;
 	});
 	ffmpeg.proc.stdout?.on("data", (chunk: Buffer) => {
-		console.log("writing to buffer : ", chunk);
 		chunks.push(chunk);
 		markReady();
 	});

@@ -15,7 +15,15 @@
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
 
-    "types": ["bun"]
+    "types": ["bun"],
+
+    // werift's index.d.ts re-exports through "werift/lib/..." subpaths, but the
+    // package's "exports" map only publishes "." and "./nonstandard", so those
+    // re-exports resolve to nothing and the module looks empty. Point the
+    // subpaths at the real files.
+    "paths": {
+      "werift/lib/*": ["./node_modules/werift/lib/*"]
+    }
   },
   "include": ["src", "tests"]
 }
