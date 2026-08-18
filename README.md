@@ -4,9 +4,9 @@ Standalone speech-to-text using the ChatGPT subscription credentials from
 `codex login`.
 
 ```bash
-uv run codex-audio                 # speak, press Enter, print the transcript
-uv run codex-audio meeting.wav     # transcribe an audio file
-uv run codex-audio --json meeting.wav
+bun run start                      # speak, press Enter, print the transcript
+bun run start meeting.wav          # transcribe an audio file
+bun run start --json meeting.wav
 ```
 
 ## How it works
@@ -28,14 +28,24 @@ language=en
 `codex-audio` follows that route and uses the same ChatGPT OAuth credentials.
 It does not require an OpenAI API key. The old WebRTC route,
 `/backend-api/codex/realtime/calls`, currently returns 404 and is retained only
-in `codex_audio/realtime.py` as legacy reference code.
+in `ts/src/realtime.ts` as legacy reference code.
 
 ## Install
 
+You need [Bun](https://bun.sh) and `ffmpeg` on the PATH. ffmpeg does the
+microphone capture.
+
 ```bash
-uv sync
+cd ts
+bun install
 codex login                 # choose Sign in with ChatGPT
-uv run codex-audio
+bun run start
+```
+
+To get a single executable instead:
+
+```bash
+bun run build               # writes dist/codex-audio
 ```
 
 ## Usage
@@ -53,11 +63,16 @@ uv run codex-audio
 transcript. The former realtime-only options remain accepted as compatibility
 options but do not change upload transcription.
 
+Set `CODEX_AUDIO_ASCII=1` if your console font cannot show the `…`, `✓` and `─`
+glyphs.
+
 ## Files
 
-- `codex_audio/auth.py` — reads and refreshes the Codex login credentials
-- `codex_audio/transcribe.py` — multipart upload and response handling
-- `codex_audio/audio.py` — microphone capture and WAV encoding
-- `codex_audio/realtime.py` — legacy WebRTC implementation, no longer used
+- `ts/src/auth.ts` — reads and refreshes the Codex login credentials
+- `ts/src/transcribe.ts` — multipart upload and response handling
+- `ts/src/audio.ts` — microphone capture and WAV encoding
+- `ts/src/renderer.ts` — terminal output for the transcript stages
+- `ts/src/cli.ts` — argument parsing and entry point
+- `ts/src/realtime.ts` — legacy WebRTC implementation, no longer used
 
 This relies on an internal Codex Desktop route, so it may change without notice.
