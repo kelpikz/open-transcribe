@@ -35,9 +35,9 @@ export class Renderer {
 		readonly interactive: boolean,
 		readonly color: boolean,
 	) {
-		// Node always writes UTF-8 to stderr, so unlike the Python there is no
-		// encoding to interrogate. CODEX_AUDIO_ASCII covers consoles whose font
-		// or code page cannot show the glyphs.
+		// Node always writes UTF-8 to stderr, so there is no encoding to
+		// interrogate. CODEX_AUDIO_ASCII covers consoles whose font or code page
+		// cannot show the glyphs.
 		this.glyphs = process.env.CODEX_AUDIO_ASCII
 			? { live: "...", ok: "*", rule: "-" }
 			: { live: "…", ok: "✓", rule: "─" };

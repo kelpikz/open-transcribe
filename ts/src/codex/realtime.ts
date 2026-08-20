@@ -323,7 +323,7 @@ export class RealtimeTranscriber {
 	}
 }
 
-/** A one-shot latch that can be reset, equivalent to `asyncio.Event`. */
+/** A one-shot latch that can be reset. */
 class Signal {
 	private resolve: () => void = () => {};
 	private promise: Promise<void> = Promise.resolve();

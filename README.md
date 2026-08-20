@@ -28,7 +28,7 @@ language=en
 `codex-audio` follows that route and uses the same ChatGPT OAuth credentials.
 It does not require an OpenAI API key. The old WebRTC route,
 `/backend-api/codex/realtime/calls`, currently returns 404 and is retained only
-in `ts/src/realtime.ts` as legacy reference code.
+in `ts/src/codex/realtime.ts` as legacy reference code.
 
 ## Install
 
@@ -68,11 +68,15 @@ glyphs.
 
 ## Files
 
-- `ts/src/auth.ts` — reads and refreshes the Codex login credentials
-- `ts/src/transcribe.ts` — multipart upload and response handling
-- `ts/src/audio.ts` — microphone capture and WAV encoding
-- `ts/src/renderer.ts` — terminal output for the transcript stages
 - `ts/src/cli.ts` — argument parsing and entry point
-- `ts/src/realtime.ts` — legacy WebRTC implementation, no longer used
+- `ts/src/renderer.ts` — terminal output for the transcript stages
+- `ts/src/audio/index.ts` — the audio surface: capture, processing, devices
+- `ts/src/audio/capture.ts` — microphone and file sources
+- `ts/src/audio/processing.ts` — ffmpeg, WAV encoding, RTP tracks
+- `ts/src/audio/devices.ts` — input device names and listing
+- `ts/src/codex/index.ts` — the Codex surface: auth, transcribe, realtime
+- `ts/src/codex/auth.ts` — reads and refreshes the Codex login credentials
+- `ts/src/codex/transcribe.ts` — multipart upload and response handling
+- `ts/src/codex/realtime.ts` — legacy WebRTC implementation, no longer used
 
 This relies on an internal Codex Desktop route, so it may change without notice.

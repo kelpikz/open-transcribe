@@ -3,15 +3,15 @@
  * codex-audio — speak, get text. Uses your ChatGPT subscription via Codex's login.
  */
 
-import { listDevices, recordMicrophone } from "./audio.js";
-import { Renderer } from "./renderer.js";
+import { listDevices, recordMicrophone } from "./audio/index.js";
 import {
 	DEFAULT_LANGUAGE,
 	DEFAULT_MODEL,
 	TRANSCRIBE_MODELS,
 	transcribeAudio,
 	transcribeFile,
-} from "./transcribe.js";
+} from "./codex/index.js";
+import { Renderer } from "./renderer.js";
 
 const PROG = "codex-audio";
 
@@ -156,7 +156,7 @@ export function parseArgs(argv: string[]): Args {
 
 		if (token === "-h" || token === "--help") throw new HelpRequested();
 
-		// Split --opt=value before matching, as argparse does.
+		// Split --opt=value before matching, so both spellings work.
 		let name = token;
 		let inlineValue: string | null = null;
 		const equals = token.indexOf("=");
@@ -330,7 +330,7 @@ export async function main(
 	return 0;
 }
 
-/** Ctrl-C during the run: the Python let KeyboardInterrupt reach `main`. */
+/** Ctrl-C during the run; `main` turns it into exit code 130. */
 class Interrupted extends Error {}
 
 async function withInterrupt<T>(work: Promise<T>): Promise<T> {

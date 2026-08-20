@@ -25,8 +25,8 @@ export class TranscriptionError extends Error {
 
 /**
  * Extension → MIME type. The first block is the set the upload route expects;
- * the rest reproduce the audio types Python's `mimetypes` table resolves, so
- * no MIME database dependency is needed. Anything else is binary.
+ * the second covers the other common audio types, so no MIME database
+ * dependency is needed. Anything else is binary.
  */
 const AUDIO_TYPES: Record<string, string> = {
 	".wav": "audio/wav",
