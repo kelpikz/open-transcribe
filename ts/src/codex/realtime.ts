@@ -1,10 +1,11 @@
 /**
- * Legacy WebRTC realtime client.
+ * WebRTC realtime client, used by `--stream`.
  *
  * The Codex Desktop composer microphone does not use this route. It uploads a
- * completed recording to `/backend-api/transcribe`; the realtime WebRTC call
- * endpoint retained here currently returns 404. The CLI uses `transcribe.ts`
- * instead, while this module remains as a record of the older protocol.
+ * completed recording to `/backend-api/transcribe` (see `transcribe.ts`).
+ * This route, `/backend-api/codex/realtime/calls`, gives live transcripts
+ * while you speak. It returned 404 for a period; it worked again on
+ * 2026-10-31.
  */
 
 import {
@@ -202,7 +203,14 @@ export class RealtimeTranscriber {
 	private readonly handlers: RealtimeHandlers;
 	private readonly opened = new Signal();
 	private readonly segmentDone = new Signal();
+	private readonly drained = new Signal();
 	private channel: RTCDataChannel | null = null;
+	/** Server VAD heard speech that it has not committed yet. */
+	private speaking = false;
+	/** Committed items whose transcript has not arrived yet. */
+	private pending = 0;
+	/** finish() sent a commit and the server has not confirmed it yet. */
+	private commitSent = false;
 
 	constructor(
 		private readonly auth: ChatGPTAuth,
@@ -259,7 +267,18 @@ export class RealtimeTranscriber {
 		this.handlers.onEvent?.(event);
 		const type = event.type ?? "";
 
-		if (DELTA_EVENTS.has(type)) {
+		if (type === "input_audio_buffer.speech_started") {
+			this.speaking = true;
+		} else if (type === "input_audio_buffer.speech_stopped") {
+			this.speaking = false;
+		} else if (type === "input_audio_buffer.committed") {
+			this.speaking = false;
+			this.commitSent = false;
+			this.pending++;
+		} else if (type === "conversation.item.input_audio_transcription.failed") {
+			this.lastError = event.error || event;
+			this.settle();
+		} else if (DELTA_EVENTS.has(type)) {
 			const delta = event.delta || "";
 			if (delta) {
 				this.transcript.partial += delta;
@@ -273,13 +292,21 @@ export class RealtimeTranscriber {
 				this.handlers.onFinal?.(text);
 			}
 			this.segmentDone.set();
+			this.settle();
 		} else if (type === "error") {
 			// Throwing here would only be swallowed by the data-channel callback,
 			// and it would strand commit() waiting on a segment that is never
 			// coming. Record it and release the waiter instead.
 			this.lastError = event.error || event;
 			this.segmentDone.set();
+			this.drained.set();
 		}
+	}
+
+	/** One committed item is done, with a transcript or a failure. */
+	private settle(): void {
+		if (this.pending > 0) this.pending--;
+		if (this.pending === 0 && !this.commitSent) this.drained.set();
 	}
 
 	async waitUntilOpen(timeoutMs = 30_000): Promise<void> {
@@ -308,6 +335,29 @@ export class RealtimeTranscriber {
 		this.send({ type: "input_audio_buffer.commit" });
 		// A timeout is not an error here: we return what we have.
 		await this.segmentDone.wait(timeoutMs);
+	}
+
+	/**
+	 * End a server-VAD session: commit the speech still in the buffer, then
+	 * wait for every transcript that is still in flight.
+	 *
+	 * With server VAD, nothing is committed if VAD heard no speech since the
+	 * last commit. A commit of silence makes the model invent text (for
+	 * example "Lütfen gel." for a silent file). Without server VAD the server
+	 * never commits by itself, so the buffer is always committed.
+	 *
+	 * Returns false if a transcript did not arrive within the timeout.
+	 */
+	async finish(timeoutMs = 20_000): Promise<boolean> {
+		const usesVad = Boolean(this.session.audio?.input?.turn_detection);
+		const needsCommit = this.speaking || !usesVad;
+		if (!needsCommit && this.pending === 0) return true;
+		this.drained.reset();
+		if (needsCommit) {
+			this.commitSent = true;
+			this.send({ type: "input_audio_buffer.commit" });
+		}
+		return await this.drained.wait(timeoutMs);
 	}
 
 	async close(): Promise<void> {

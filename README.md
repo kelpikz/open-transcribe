@@ -7,6 +7,7 @@ Standalone speech-to-text using the ChatGPT subscription credentials from
 bun run start                      # speak, press Enter, print the transcript
 bun run start meeting.wav          # transcribe an audio file
 bun run start --json meeting.wav
+bun run start --stream             # show the text while you speak
 ```
 
 ## How it works
@@ -26,9 +27,12 @@ language=en
 ```
 
 `codex-audio` follows that route and uses the same ChatGPT OAuth credentials.
-It does not require an OpenAI API key. The old WebRTC route,
-`/backend-api/codex/realtime/calls`, currently returns 404 and is retained only
-in `ts/src/codex/realtime.ts` as legacy reference code.
+It does not require an OpenAI API key.
+
+`--stream` uses a second route, `/backend-api/codex/realtime/calls`. It sends
+the audio over WebRTC, and server VAD sends back one transcript for each
+segment of speech. This route returned 404 for a period. It worked again on
+2026-10-31.
 
 ## Install
 
@@ -58,10 +62,12 @@ bun run build               # writes dist/codex-audio
 | `--language`, `-l` | Send an ISO-639-1 language hint; `auto` omits it |
 | `--json` | Emit `{"text": "..."}` |
 | `--quiet`, `-q` | Suppress progress output on stderr |
+| `--stream` | Stream over WebRTC and show each segment when you pause |
 
-`--stream` is not available because the desktop upload route returns one final
-transcript. The former realtime-only options remain accepted as compatibility
-options but do not change upload transcription.
+These options change only `--stream`: `--model`, `--prompt`, `--silence-ms`,
+`--noise-reduction`, `--no-partials`, `--raw-events`, `--session` (a JSON file
+that replaces the session payload) and `--drain` (seconds to wait for the last
+transcripts, default 10).
 
 Set `CODEX_AUDIO_ASCII=1` if your console font cannot show the `…`, `✓` and `─`
 glyphs.
@@ -77,6 +83,6 @@ glyphs.
 - `ts/src/codex/index.ts` — the Codex surface: auth, transcribe, realtime
 - `ts/src/codex/auth.ts` — reads and refreshes the Codex login credentials
 - `ts/src/codex/transcribe.ts` — multipart upload and response handling
-- `ts/src/codex/realtime.ts` — legacy WebRTC implementation, no longer used
+- `ts/src/codex/realtime.ts` — WebRTC client for `--stream`
 
 This relies on an internal Codex Desktop route, so it may change without notice.

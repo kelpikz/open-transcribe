@@ -75,7 +75,7 @@ export async function recordMicrophone(
 }
 
 /** Resolve once stdin yields a line, or reaches end of input. */
-function waitForLine(): Promise<void> {
+export function waitForLine(): Promise<void> {
   return new Promise((resolve) => {
     const reader = createInterface({ input: process.stdin });
     const finish = (): void => {
@@ -89,12 +89,15 @@ function waitForLine(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
-// Realtime tracks (legacy WebRTC path — see codex/realtime.ts)
+// Realtime tracks (WebRTC path — see codex/realtime.ts)
+//
+// Both return a source that is not playing yet. Call `play()` after the data
+// channel opens, or the start of the audio is lost.
 // ---------------------------------------------------------------------------
 
 /** Live mic capture as a WebRTC audio track. */
 export function microphoneTrack(device?: Device): Promise<RtpAudioSource> {
-  return RtpAudioSource.start(micInputArgs(device));
+  return RtpAudioSource.open(micInputArgs(device));
 }
 
 /** Audio track read from any file ffmpeg can decode, paced at realtime. */
@@ -102,7 +105,7 @@ export async function fileTrack(path: string): Promise<RtpAudioSource> {
   if (!hasAudioStream(path)) {
     throw new Error(`no audio stream found in ${path}`);
   }
-  return await RtpAudioSource.start(["-re", "-i", path]);
+  return await RtpAudioSource.open(["-re", "-i", path]);
 }
 
 function hasAudioStream(path: string): boolean {
