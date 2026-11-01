@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import {
 	fileTrack,
 	listDevices,
+	micInputArgs,
 	microphoneTrack,
 	recordMicrophone,
 	waitForLine,
@@ -22,6 +23,7 @@ import {
 	transcribeAudio,
 	transcribeFile,
 } from "./codex/index.js";
+import { DEFAULT_HOTKEY, listen, parseHotkey } from "./listen.js";
 import { Renderer } from "./renderer.js";
 
 const PROG = "codex-audio";
@@ -68,6 +70,8 @@ export interface Args {
 	rawEvents: boolean;
 	session: string | null;
 	drain: number;
+	listen: boolean;
+	hotkey: string;
 }
 
 /** Thrown for a usage error; `main` turns it into exit code 2. */
@@ -81,6 +85,7 @@ const HELP = `usage: ${PROG} [-h] [--device DEVICE] [--model MODEL] [--list-devi
                    [--noise-reduction {near_field,far_field,none}] [--json]
                    [--quiet] [--no-partials] [--no-color] [--raw-events]
                    [--session SESSION] [--drain DRAIN]
+                   [--listen] [--hotkey HOTKEY]
                    [input]
 
 Speech to text using your ChatGPT subscription (via \`codex login\`).
@@ -111,6 +116,10 @@ options:
   --session SESSION     --stream only; JSON file that replaces the session payload
   --drain DRAIN         --stream only; seconds to wait for the last transcripts
                         after the audio ends (default: 10)
+  --listen              Windows: stay in the background; hold the hotkey to
+                        dictate into the focused window (Ctrl+C quits)
+  --hotkey HOTKEY       --listen only; keys to hold, joined with '+'
+                        (default: ${DEFAULT_HOTKEY}; e.g. ctrl+win, f9)
 `;
 
 /** Sentinel thrown by `--help`, so `main` can print and exit 0. */
@@ -134,6 +143,8 @@ export function parseArgs(argv: string[]): Args {
 		rawEvents: false,
 		session: null,
 		drain: 10,
+		listen: false,
+		hotkey: DEFAULT_HOTKEY,
 	};
 
 	const flags: Record<string, keyof Args> = {
@@ -145,6 +156,7 @@ export function parseArgs(argv: string[]): Args {
 		"--no-partials": "noPartials",
 		"--no-color": "noColor",
 		"--raw-events": "rawEvents",
+		"--listen": "listen",
 	};
 	const valued = new Set([
 		"--device",
@@ -156,6 +168,7 @@ export function parseArgs(argv: string[]): Args {
 		"--noise-reduction",
 		"--session",
 		"--drain",
+		"--hotkey",
 	]);
 
 	let positional: string | null = null;
@@ -218,6 +231,9 @@ function applyValue(args: Args, name: string, value: string): void {
 			return;
 		case "--prompt":
 			args.prompt = value;
+			return;
+		case "--hotkey":
+			args.hotkey = value;
 			return;
 		case "--session":
 			args.session = value;
@@ -426,6 +442,8 @@ export async function main(
 		args.device = Number(args.device);
 	}
 
+	if (args.listen) return await listenMain(args);
+
 	let text: string;
 	try {
 		const run = args.stream
@@ -446,6 +464,38 @@ export async function main(
 	}
 
 	writeText(text, args);
+	return 0;
+}
+
+async function listenMain(args: Args): Promise<number> {
+	if (args.stream || args.input) {
+		err(`${PROG}: error: --listen cannot be used with --stream or an input file`);
+		return 2;
+	}
+	let hotkey: ReturnType<typeof parseHotkey>;
+	try {
+		hotkey = parseHotkey(args.hotkey);
+	} catch (error) {
+		err(`${PROG}: error: argument --hotkey: ${(error as Error).message}`);
+		return 2;
+	}
+	try {
+		await withInterrupt(
+			listen({
+				inputArgs: micInputArgs(args.device),
+				hotkey,
+				language: args.language === "auto" ? null : args.language,
+				log: (message) => {
+					if (!args.quiet) err(message);
+				},
+			}),
+		);
+	} catch (error) {
+		if (error instanceof Interrupted) return 130;
+		const e = error as Error;
+		err(`error: ${e.name}: ${e.message}`);
+		return 1;
+	}
 	return 0;
 }
 

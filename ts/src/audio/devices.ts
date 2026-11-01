@@ -15,7 +15,9 @@ export function micInputArgs(device?: Device): string[] {
     case "win32":
       // dshow addresses devices by exact name, not index, so a numeric
       // --device is looked up in ffmpeg's own enumeration order.
-      return ["-f", "dshow", "-i", `audio=${dshowDeviceName(device)}`];
+      // dshow sends audio in 500 ms blocks by default. 50 ms blocks make the
+      // first audio come about 0.5 s sooner, and less of the end is lost.
+      return ["-f", "dshow", "-audio_buffer_size", "50", "-i", `audio=${dshowDeviceName(device)}`];
     case "darwin":
       // avfoundation takes "<video>:<audio>"; an empty video half is silence.
       return ["-f", "avfoundation", "-i", `:${device ?? 0}`];
@@ -43,6 +45,14 @@ function dshowDeviceName(device?: Device): string {
     );
   }
   return name;
+}
+
+/**
+ * The names of the audio input devices, in ffmpeg's order. The first one is
+ * the default. Only Windows gives names; other platforms give an empty list.
+ */
+export function audioDeviceNames(): string[] {
+  return process.platform === "win32" ? dshowAudioDeviceNames() : [];
 }
 
 /** Parse the audio device names out of ffmpeg's dshow listing. */
