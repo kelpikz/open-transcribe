@@ -25,6 +25,10 @@ function load() {
 		GetForegroundWindow: { args: [], returns: ptr },
 		GetClassNameW: { args: [ptr, ptr, i32], returns: i32 },
 		GetWindowTextW: { args: [ptr, ptr, i32], returns: i32 },
+		CreateWindowExW: {
+			args: [u32, ptr, ptr, u32, i32, i32, i32, i32, ptr, ptr, ptr, ptr], returns: ptr,
+		},
+		DestroyWindow: { args: [ptr], returns: i32 },
 		OpenClipboard: { args: [ptr], returns: i32 },
 		CloseClipboard: { args: [], returns: i32 },
 		EmptyClipboard: { args: [], returns: i32 },
@@ -168,10 +172,10 @@ function isMemoryFormat(format: number): boolean {
 export type ClipboardSnapshot = Map<number, Uint8Array>;
 
 /** Another app can hold the clipboard for a moment, so try a few times. */
-async function openClipboard(): Promise<void> {
+async function openClipboard(owner: Pointer | null = null): Promise<void> {
 	const { user32 } = win();
 	for (let attempt = 0; attempt < 20; attempt++) {
-		if (user32.OpenClipboard(null)) return;
+		if (user32.OpenClipboard(owner)) return;
 		await Bun.sleep(25);
 	}
 	throw new Error("the clipboard is in use by another app");
@@ -215,9 +219,14 @@ export async function readClipboard(): Promise<ClipboardSnapshot> {
  */
 export async function writeClipboard(snapshot: ClipboardSnapshot): Promise<number> {
 	const { user32, kernel32 } = win();
-	await openClipboard();
+	// Destroy the owner after each write. Bun does not pump window messages.
+	const owner = user32.CreateWindowExW(0, wide("STATIC"), null, 0, 0, 0, 0, 0, null, null, null, null);
+	if (owner === null) throw new Error("the clipboard owner window could not be created");
+	let opened = false;
 	let written = 0;
 	try {
+		await openClipboard(owner);
+		opened = true;
 		if (!user32.EmptyClipboard()) throw new Error("the clipboard could not be cleared");
 		for (const [format, bytes] of snapshot) {
 			const handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, Math.max(1, bytes.byteLength));
@@ -234,7 +243,8 @@ export async function writeClipboard(snapshot: ClipboardSnapshot): Promise<numbe
 			else written++;
 		}
 	} finally {
-		user32.CloseClipboard();
+		if (opened) user32.CloseClipboard();
+		user32.DestroyWindow(owner);
 	}
 	return written;
 }

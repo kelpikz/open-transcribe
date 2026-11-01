@@ -166,7 +166,6 @@ function renderStatus() {
 
 $("copy-last").addEventListener("click", async () => {
   await command({ cmd: "copyLast" });
-  toast("The last text is copied.");
 });
 
 // ---------------------------------------------------------------------------
@@ -439,6 +438,9 @@ listen("sidecar", ({ payload }) => {
     case "last":
       app.last = payload.at ? { at: payload.at, delivery: payload.delivery } : null;
       renderStatus();
+      break;
+    case "copied":
+      toast("The last text is copied.");
       break;
     case "error":
       toast(payload.message, true);

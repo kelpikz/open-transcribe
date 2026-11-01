@@ -99,11 +99,19 @@ export function allDown(hotkey: Hotkey): boolean {
 	return hotkey.keys.every((codes) => codes.some(desktop.isKeyDown));
 }
 
+const MODIFIER_KEYS = [
+	...NAMED_KEYS.lctrl!, ...NAMED_KEYS.rctrl!,
+	...NAMED_KEYS.lshift!, ...NAMED_KEYS.rshift!,
+	...NAMED_KEYS.lalt!, ...NAMED_KEYS.ralt!,
+	VK_LWIN, VK_RWIN,
+];
+
 function anyDown(hotkey: Hotkey): boolean {
-	return hotkey.keys.some((codes) => codes.some(desktop.isKeyDown));
+	return hotkey.keys.some((codes) => codes.some(desktop.isKeyDown))
+		|| MODIFIER_KEYS.some(desktop.isKeyDown);
 }
 
-/** Wait until no key of the hotkey is down. False after `timeoutMs`. */
+/** Wait until the hotkey and all modifiers are up. False after `timeoutMs`. */
 async function waitReleased(hotkey: Hotkey, timeoutMs = 3000): Promise<boolean> {
 	const end = Date.now() + timeoutMs;
 	while (anyDown(hotkey)) {
@@ -132,14 +140,13 @@ export async function deliver(
 	expected?: desktop.ForegroundWindow,
 ): Promise<Delivery> {
 	const target = desktop.foregroundWindow();
-	// A key of the hotkey that is still down would change Ctrl+V into
-	// another shortcut (Win+V opens clipboard history).
+	// A held hotkey or modifier would change Ctrl+V into another shortcut.
 	const reason = !target.canPaste
 		? "no window to paste into"
 		: expected && expected.hwnd !== target.hwnd
 			? "the focus moved to another window"
 			: !(await waitReleased(hotkey))
-			? "the hotkey is still held"
+			? "a hotkey or modifier key is still held"
 			: null;
 	if (reason !== null) {
 		await desktop.setClipboardText(text);
@@ -150,6 +157,15 @@ export async function deliver(
 	const saved = await desktop.readClipboard();
 	await desktop.setClipboardText(text, { temporary: true });
 	const sequence = desktop.clipboardSequence();
+	const finalReason = desktop.foregroundWindow().hwnd !== target.hwnd
+		? "the focus moved to another window"
+		: anyDown(hotkey)
+			? "a hotkey or modifier key is still held"
+			: null;
+	if (finalReason !== null) {
+		desktop.notify("codex-audio", `Copied to the clipboard (${finalReason}).`);
+		return { kind: "copied", reason: finalReason };
+	}
 	desktop.sendCtrlV();
 	await Bun.sleep(PASTE_SETTLE_MS);
 	// If something else changed the clipboard in the meantime, keep that.

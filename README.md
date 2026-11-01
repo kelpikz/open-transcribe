@@ -89,8 +89,10 @@ bun run start --listen --hotkey ctrl+win
 3. If a window is in front, the text is pasted into it with Ctrl+V. Then the
    old clipboard content is put back. Clipboard history (Win+V) does not keep
    the pasted text.
-4. If the desktop or the taskbar is in front, the text is copied to the
-   clipboard only, and a short notice shows.
+4. If the desktop or the taskbar is in front, or focus moves to another
+   window, the text is copied to the clipboard only, and a short notice shows.
+   The app waits up to three seconds for the hotkey and all modifier keys to
+   be released. If any remain held or are pressed again before paste, it copies instead.
 
 Points to know:
 
@@ -136,6 +138,7 @@ You need Rust (for Tauri) and ffmpeg on `PATH`.
 - The text is not saved. Only the last text is kept in memory, for
   **Copy it again**.
 - Closing the window hides it. Use the tray icon to open it again or to quit.
+- Opening the app again shows the existing settings window. Only one copy runs.
 - Settings are in `%APPDATA%\com.kelpikz.codex-audio\settings.json`.
 
 ## Files

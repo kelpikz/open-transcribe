@@ -11,7 +11,7 @@
  *                       | "setMicrophone" | "listDevices" | "setAfterSpeak" | "setSounds"
  *                       | "copyLast" | "checkAccount", ...}
  *   stdout (events):   {ev: "state" | "level" | "settings" | "devices" | "account"
- *                       | "last" | "error", ...}
+ *                       | "last" | "copied" | "error", ...}
  *
  * Usage: codex-audio-sidecar --data-dir DIR
  */
@@ -30,7 +30,7 @@ import {
 	pcmPeak,
 	wavFromPcm,
 } from "./audio/index.js";
-import { ChatGPTAuth, TranscriptionError, transcribeAudio } from "./codex/index.js";
+import { AuthError, ChatGPTAuth, TranscriptionError, transcribeAudio } from "./codex/index.js";
 import * as desktop from "./desktop/win32.js";
 import {
 	DEFAULT_HOTKEY,
@@ -200,15 +200,34 @@ function sendLast(): void {
 let signedIn = false;
 let accountMessage = "";
 
-/** Read the `codex login` credentials again. */
-function checkAccount(): void {
+let accountRevision = 0;
+
+function signOut(message: string): void {
+	accountRevision++;
+	signedIn = false;
+	accountMessage = message;
+	sendAccount();
+}
+
+/** Read the credentials and refresh an expired access token. */
+async function checkAccount(): Promise<void> {
+	const revision = ++accountRevision;
 	try {
-		ChatGPTAuth.load();
+		await ChatGPTAuth.load().ensureFresh();
+		if (revision !== accountRevision) return;
 		signedIn = true;
 		accountMessage = "";
 	} catch (error) {
-		signedIn = false;
-		accountMessage = (error as Error).message;
+		if (revision !== accountRevision) return;
+		if (error instanceof AuthError) {
+			signOut(error.message);
+			return;
+		}
+		// The credentials are there, but the refresh failed (for example, no
+		// network). That does not mean signed out.
+		signedIn = true;
+		accountMessage = "";
+		fail((error as Error).message);
 	}
 	sendAccount();
 }
@@ -370,12 +389,12 @@ async function stop(): Promise<void> {
 		await handleClip(pcm, target);
 	} catch (error) {
 		fail((error as Error).message);
-		// A failed upload is often a sign-in that has expired.
-		checkAccount();
-		if (error instanceof TranscriptionError && /^40[13] /.test(error.message)) {
-			signedIn = false;
-			accountMessage = "Your ChatGPT sign-in has expired.";
-			sendAccount();
+		if (error instanceof AuthError) {
+			signOut(error.message);
+		} else if (error instanceof TranscriptionError && (error.status === 401 || error.status === 403)) {
+			signOut("Your ChatGPT sign-in was rejected. Run `codex login` again.");
+		} else {
+			void checkAccount();
 		}
 	} finally {
 		// (The cast: `state` can change during the await, which TypeScript does not see.)
@@ -396,7 +415,7 @@ async function handleClip(pcm: Buffer, target: desktop.ForegroundWindow): Promis
 		})
 	).trim();
 	if (text === "") return;
-	if (!signedIn) checkAccount();
+	if (!signedIn) void checkAccount();
 
 	// Keep the text even if the paste fails, so it can be copied again.
 	let delivery: LastText["delivery"] = "failed";
@@ -500,10 +519,15 @@ async function handleCommand(command: Record<string, unknown>): Promise<void> {
 			playTone(START_TONE);
 			return;
 		case "copyLast":
-			if (last) await desktop.setClipboardText(last.text);
+			if (!last) {
+				fail("There is no last text to copy.");
+				return;
+			}
+			await desktop.setClipboardText(last.text);
+			send({ ev: "copied" });
 			return;
 		case "checkAccount":
-			checkAccount();
+			await checkAccount();
 			return;
 		default:
 			fail(`unknown command: ${JSON.stringify(command)}`);
@@ -535,7 +559,8 @@ process.once("exit", closeMic);
 
 sendSettings();
 sendLast();
-checkAccount();
+// The check can use the network, so do not wait for it.
+void checkAccount();
 desktop.foregroundWindow(); // Load the Windows libraries now.
 setInterval(pollHotkey, POLL_MS);
 setInterval(() => {
