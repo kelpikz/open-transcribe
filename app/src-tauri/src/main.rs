@@ -14,7 +14,7 @@ use serde_json::Value;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent,
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WindowEvent,
 };
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_shell::{
@@ -30,11 +30,46 @@ const AUTOSTART_ARG: &str = "--autostart";
 
 /// Distance from the bottom of the screen to the pill, in logical pixels.
 const PILL_BOTTOM_GAP: f64 = 96.0;
+const PILL_ERROR_SECONDS: u64 = 6;
+
+/// An idle update must not immediately hide a dictation error. Each new
+/// error or recording invalidates any older error's dismissal timer.
+#[derive(Default)]
+struct PillState {
+    revision: u64,
+    error_visible: bool,
+}
+
+impl PillState {
+    fn show_error(&mut self) -> u64 {
+        self.revision += 1;
+        self.error_visible = true;
+        self.revision
+    }
+
+    fn start_activity(&mut self) {
+        self.revision += 1;
+        self.error_visible = false;
+    }
+
+    fn dismiss_error(&mut self, revision: u64) -> bool {
+        if self.error_visible && self.revision == revision {
+            self.error_visible = false;
+            true
+        } else {
+            false
+        }
+    }
+}
+
+struct Pill(Mutex<PillState>);
 
 #[tauri::command]
 fn send(line: String, sidecar: State<Sidecar>) -> Result<(), String> {
     let mut guard = sidecar.0.lock().map_err(|e| e.to_string())?;
-    let child = guard.as_mut().ok_or("the background process is not running")?;
+    let child = guard
+        .as_mut()
+        .ok_or("the background process is not running")?;
     child
         .write(format!("{line}\n").as_bytes())
         .map_err(|e| e.to_string())
@@ -77,10 +112,43 @@ fn on_sidecar_line(app: &AppHandle, line: &str) {
         eprintln!("sidecar: {line}");
         return;
     };
-    if event["ev"] == "state" {
-        match event["state"].as_str() {
-            Some("opening") | Some("recording") | Some("transcribing") => show_pill(app),
-            _ => hide_pill(app),
+    on_sidecar_event(app, event);
+}
+
+fn on_sidecar_event(app: &AppHandle, event: Value) {
+    let is_state = event["ev"] == "state";
+    let is_error = (event["ev"] == "error" && event["bubble"].is_string())
+        || (is_state && event["state"] == "error");
+    let pill = app.state::<Pill>();
+    if let Ok(mut state) = pill.0.lock() {
+        if is_error {
+            let revision = state.show_error();
+            if let Some(window) = app.get_webview_window("overlay") {
+                let _ = window.set_size(LogicalSize::new(360.0, 64.0));
+            }
+            show_pill(app);
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_secs(PILL_ERROR_SECONDS));
+                let pill = app.state::<Pill>();
+                if let Ok(mut state) = pill.0.lock() {
+                    if state.dismiss_error(revision) {
+                        hide_pill(&app);
+                    }
+                };
+            });
+        } else if is_state {
+            match event["state"].as_str() {
+                Some("opening") | Some("recording") | Some("transcribing") => {
+                    state.start_activity();
+                    if let Some(window) = app.get_webview_window("overlay") {
+                        let _ = window.set_size(LogicalSize::new(180.0, 48.0));
+                    }
+                    show_pill(app);
+                }
+                _ if !state.error_visible => hide_pill(app),
+                _ => {}
+            }
         }
     }
     let _ = app.emit("sidecar", event);
@@ -115,14 +183,14 @@ fn start_sidecar(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 }
                 CommandEvent::Stderr(bytes) => eprint!("{}", String::from_utf8_lossy(&bytes)),
                 CommandEvent::Terminated(status) => {
-                    hide_pill(&app);
                     let message = format!(
                         "The background process stopped (exit code {:?}). Restart the app.",
                         status.code
                     );
-                    let _ = app.emit(
-                        "sidecar",
-                        serde_json::json!({ "ev": "state", "state": "error", "message": message }),
+                    on_sidecar_event(
+                        &app,
+                        serde_json::json!({ "ev": "state", "state": "error", "message": message,
+                            "bubble": "Background process stopped. Restart the app." }),
                     );
                 }
                 _ => {}
@@ -144,6 +212,7 @@ fn quit(app: &AppHandle) {
 
 fn main() {
     tauri::Builder::default()
+        .manage(Pill(Mutex::new(PillState::default())))
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app);
         }))
@@ -204,4 +273,31 @@ fn main() {
         })
         .run(tauri::generate_context!())
         .expect("error while running codex-audio");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PillState;
+
+    #[test]
+    fn errors_stay_visible_until_their_timer_expires() {
+        let mut state = PillState::default();
+        let revision = state.show_error();
+        assert!(state.error_visible); // An idle update must leave this alone.
+        assert!(state.dismiss_error(revision));
+        assert!(!state.error_visible);
+        assert!(!state.dismiss_error(revision));
+    }
+
+    #[test]
+    fn an_old_timer_cannot_hide_a_new_recording_or_error() {
+        let mut state = PillState::default();
+        let first = state.show_error();
+        state.start_activity();
+        assert!(!state.dismiss_error(first));
+        let second = state.show_error();
+        assert!(!state.dismiss_error(first));
+        assert!(state.error_visible);
+        assert!(state.dismiss_error(second));
+    }
 }

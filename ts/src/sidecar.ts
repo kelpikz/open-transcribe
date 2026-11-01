@@ -171,8 +171,9 @@ function sendSettings(): void {
 	send({ ev: "settings", ...settings });
 }
 
-function fail(message: string): void {
-	send({ ev: "error", message });
+/** Details go to settings; an optional short message also appears in the pill. */
+function fail(message: string, bubble?: string): void {
+	send({ ev: "error", message, ...(bubble ? { bubble } : {}) });
 }
 
 // ---------------------------------------------------------------------------
@@ -388,7 +389,11 @@ async function stop(): Promise<void> {
 	try {
 		await handleClip(pcm, target);
 	} catch (error) {
-		fail((error as Error).message);
+		const signInFailed = error instanceof AuthError
+			|| (error instanceof TranscriptionError && (error.status === 401 || error.status === 403));
+		fail((error as Error).message, signInFailed
+			? "Sign-in failed. Check settings."
+			: "Transcription failed. Try again.");
 		if (error instanceof AuthError) {
 			signOut(error.message);
 		} else if (error instanceof TranscriptionError && (error.status === 401 || error.status === 403)) {
@@ -404,7 +409,7 @@ async function stop(): Promise<void> {
 
 async function handleClip(pcm: Buffer, target: desktop.ForegroundWindow): Promise<void> {
 	if (pcmPeak(pcm) < SILENT_PEAK) {
-		fail("No speech was heard.");
+		fail("No speech was heard.", "No speech heard. Try again.");
 		return;
 	}
 	const text = (
@@ -414,7 +419,10 @@ async function handleClip(pcm: Buffer, target: desktop.ForegroundWindow): Promis
 			language: settings.language === "auto" ? null : settings.language,
 		})
 	).trim();
-	if (text === "") return;
+	if (text === "") {
+		fail("The transcription returned no text.", "No text returned. Try again.");
+		return;
+	}
 	if (!signedIn) void checkAccount();
 
 	// Keep the text even if the paste fails, so it can be copied again.
@@ -427,7 +435,8 @@ async function handleClip(pcm: Buffer, target: desktop.ForegroundWindow): Promis
 			delivery = (await deliver(text, hotkey, target)).kind;
 		}
 	} catch (error) {
-		fail(`The text was not pasted (${(error as Error).message}). Use "Copy it again".`);
+		fail(`The text was not pasted (${(error as Error).message}). Use "Copy it again".`,
+			"Couldn't insert text. Open settings to copy it.");
 	}
 	last = { at: new Date().toISOString(), text, delivery };
 	sendLast();

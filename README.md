@@ -130,6 +130,9 @@ You need Rust (for Tauri) and ffmpeg on `PATH`.
 - A pill at the bottom of the screen shows a live waveform and a timer while
   you record. The pill does not take focus and does not catch clicks, so the
   text goes to the window you work in.
+- If recording, transcription, or insertion fails, the pill shows a short
+  error for six seconds. Starting another recording replaces it immediately.
+  For details, open settings. If insertion failed, use **Copy it again**.
 - The window is one settings page. The top shows how to dictate. If
   something is wrong (signed out, no ffmpeg, no microphone), it shows the
   problem and the fix.

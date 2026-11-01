@@ -100,6 +100,28 @@
   .busy .wave span { visibility: hidden; }
   .busy .shimmer { display: block; }
   .busy .time { color: #6f6f6f; }
+
+  .pill.error {
+    width: calc(100% - 12px);
+    height: auto;
+    min-height: 36px;
+    padding: 8px 14px;
+    box-sizing: border-box;
+    border-color: rgba(255, 92, 92, 0.5);
+  }
+  .error .dot { animation: none; }
+  .error .wave, .error .time { display: none; }
+  .message {
+    min-width: 0;
+    color: #ffb4b4;
+    font-size: 12px;
+    line-height: 16px;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .message[hidden] { display: none; }
 </style>
 </head>
 <body>
@@ -107,6 +129,7 @@
     <span class="dot"></span>
     <div class="wave" id="wave"><div class="shimmer"></div></div>
     <span class="time" id="time">0:00</span>
+    <span class="message" id="message" role="alert" hidden></span>
   </div>
   <script src="overlay.js"></script>
 </body>
