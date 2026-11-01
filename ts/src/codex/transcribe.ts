@@ -21,6 +21,10 @@ const UPLOAD_TIMEOUT_MS = 120_000;
 /** The ChatGPT transcription service rejected or malformed a request. */
 export class TranscriptionError extends Error {
 	override readonly name = "TranscriptionError";
+
+	constructor(message: string, readonly status?: number) {
+		super(message);
+	}
 }
 
 /**
@@ -84,6 +88,7 @@ export async function transcribeAudio(
 		const body = await response.text();
 		throw new TranscriptionError(
 			`${response.status} from ${url}: ${body.slice(0, 500)}`,
+			response.status,
 		);
 	}
 

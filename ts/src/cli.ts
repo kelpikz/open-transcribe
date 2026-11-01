@@ -3,14 +3,27 @@
  * codex-audio — speak, get text. Uses your ChatGPT subscription via Codex's login.
  */
 
-import { listDevices, recordMicrophone } from "./audio/index.js";
+import { readFileSync } from "node:fs";
+
 import {
+	fileTrack,
+	listDevices,
+	micInputArgs,
+	microphoneTrack,
+	recordMicrophone,
+	waitForLine,
+} from "./audio/index.js";
+import {
+	ChatGPTAuth,
 	DEFAULT_LANGUAGE,
 	DEFAULT_MODEL,
+	RealtimeTranscriber,
 	TRANSCRIBE_MODELS,
+	realtime,
 	transcribeAudio,
 	transcribeFile,
 } from "./codex/index.js";
+import { DEFAULT_HOTKEY, listen, parseHotkey } from "./listen.js";
 import { Renderer } from "./renderer.js";
 
 const PROG = "codex-audio";
@@ -57,6 +70,8 @@ export interface Args {
 	rawEvents: boolean;
 	session: string | null;
 	drain: number;
+	listen: boolean;
+	hotkey: string;
 }
 
 /** Thrown for a usage error; `main` turns it into exit code 2. */
@@ -70,6 +85,7 @@ const HELP = `usage: ${PROG} [-h] [--device DEVICE] [--model MODEL] [--list-devi
                    [--noise-reduction {near_field,far_field,none}] [--json]
                    [--quiet] [--no-partials] [--no-color] [--raw-events]
                    [--session SESSION] [--drain DRAIN]
+                   [--listen] [--hotkey HOTKEY]
                    [input]
 
 Speech to text using your ChatGPT subscription (via \`codex login\`).
@@ -80,27 +96,30 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --device DEVICE       input device index or name (see --list-devices)
-  --model MODEL         compatibility option; desktop endpoint chooses the model
+  --model MODEL         --stream only; the upload endpoint chooses its own model
                         (default: ${DEFAULT_MODEL}; known: ${TRANSCRIBE_MODELS.join(", ")})
   --list-devices        list audio input devices and exit
   --language, -l LANGUAGE
                         ISO-639-1 language hint (default: ${DEFAULT_LANGUAGE}). Use 'auto'
                         to let the model detect it per segment
-  --prompt PROMPT       context hint to bias spelling of names/jargon
-  --stream              compatibility option; upload transcription returns one
-                        final transcript
+  --prompt PROMPT       --stream only; context hint to bias spelling of names/jargon
+  --stream              stream over WebRTC and show text while you speak
   --silence-ms SILENCE_MS
-                        compatibility option; upload transcription is not streamed
+                        --stream only; silence that ends a segment (default: 500)
   --noise-reduction {near_field,far_field,none}
-                        compatibility option; noise reduction is selected by the
-                        desktop service
+                        --stream only; input noise reduction (default: none)
   --json                emit JSON instead of plain text
   --quiet, -q           no progress output on stderr
   --no-partials         show only settled segments, not live guesses
   --no-color            disable ANSI colour
-  --raw-events          compatibility option; upload has no protocol events
-  --session SESSION     compatibility option; upload has no session JSON
-  --drain DRAIN         compatibility option; upload has no in-flight drain
+  --raw-events          --stream only; print every server event as JSON on stderr
+  --session SESSION     --stream only; JSON file that replaces the session payload
+  --drain DRAIN         --stream only; seconds to wait for the last transcripts
+                        after the audio ends (default: 10)
+  --listen              Windows: stay in the background; hold the hotkey to
+                        dictate into the focused window (Ctrl+C quits)
+  --hotkey HOTKEY       --listen only; keys to hold, joined with '+'
+                        (default: ${DEFAULT_HOTKEY}; e.g. ctrl+win, f9)
 `;
 
 /** Sentinel thrown by `--help`, so `main` can print and exit 0. */
@@ -123,7 +142,9 @@ export function parseArgs(argv: string[]): Args {
 		noColor: false,
 		rawEvents: false,
 		session: null,
-		drain: 2.0,
+		drain: 10,
+		listen: false,
+		hotkey: DEFAULT_HOTKEY,
 	};
 
 	const flags: Record<string, keyof Args> = {
@@ -135,6 +156,7 @@ export function parseArgs(argv: string[]): Args {
 		"--no-partials": "noPartials",
 		"--no-color": "noColor",
 		"--raw-events": "rawEvents",
+		"--listen": "listen",
 	};
 	const valued = new Set([
 		"--device",
@@ -146,6 +168,7 @@ export function parseArgs(argv: string[]): Args {
 		"--noise-reduction",
 		"--session",
 		"--drain",
+		"--hotkey",
 	]);
 
 	let positional: string | null = null;
@@ -208,6 +231,9 @@ function applyValue(args: Args, name: string, value: string): void {
 			return;
 		case "--prompt":
 			args.prompt = value;
+			return;
+		case "--hotkey":
+			args.hotkey = value;
 			return;
 		case "--session":
 			args.session = value;
@@ -282,6 +308,115 @@ async function fileMain(args: Args): Promise<string> {
 	return text;
 }
 
+/** Time for the last RTP packets to reach the server after ffmpeg stops. */
+const TAIL_MS = 1000;
+
+function streamSession(args: Args): realtime.SessionPayload {
+	if (args.session) {
+		return JSON.parse(
+			readFileSync(args.session, "utf-8"),
+		) as realtime.SessionPayload;
+	}
+	return realtime.buildSession({
+		model: args.model,
+		language: args.language === "auto" ? null : args.language,
+		prompt: args.prompt,
+		silenceMs: args.silenceMs,
+		noiseReduction: args.noiseReduction === "none" ? null : args.noiseReduction,
+		// Server VAD cuts the audio into segments and sends each transcript as
+		// soon as the speaker pauses. Without it nothing arrives until the end.
+		vad: true,
+	});
+}
+
+async function streamMain(args: Args): Promise<string> {
+	const tty = Boolean(process.stderr.isTTY);
+	const renderer = new Renderer(
+		!args.quiet,
+		tty && !args.noPartials,
+		tty && !args.noColor,
+	);
+	const session = streamSession(args);
+	const auth = await ChatGPTAuth.load();
+	await auth.ensureFresh();
+
+	const rt = new RealtimeTranscriber(auth, session, {
+		onDelta: (delta) => renderer.delta(delta),
+		onFinal: (text) => renderer.final(text),
+		onEvent: args.rawEvents
+			? (event) => err(JSON.stringify(event))
+			: undefined,
+	});
+	const source = args.input
+		? await fileTrack(args.input)
+		: await microphoneTrack(args.device ?? undefined);
+	let finished = false;
+
+	try {
+		renderer.status("connecting…");
+		await rt.connect(source.track);
+		await rt.waitUntilOpen();
+
+		// Start the audio only now. Audio sent before the channel opens is lost.
+		const ffmpeg = source.play();
+		if (args.input) {
+			renderer.status("streaming…");
+			await ffmpeg.exited;
+		} else {
+			renderer.status("Opening the microphone…");
+			await Promise.race([source.ready, ffmpeg.exited]);
+			renderer.status("Recording — press Enter to stop.");
+			await Promise.race([waitForLine(), ffmpeg.exited]);
+			ffmpeg.stop();
+			await ffmpeg.exited;
+		}
+
+		const failure = ffmpeg.failureMessage();
+		if (failure !== null && rt.transcript.text === "") {
+			throw new Error(failure);
+		}
+
+		await Bun.sleep(TAIL_MS);
+		finished = await rt.finish(args.drain * 1000);
+	} finally {
+		source.stop();
+		await rt.close();
+	}
+
+	const text = rt.transcript.text;
+	renderer.done();
+	if (!finished) {
+		throw new IncompleteStream(
+			`the last transcript did not arrive within ${args.drain} s; try a larger --drain`,
+			text,
+		);
+	}
+	if (rt.lastError !== null) {
+		throw new IncompleteStream(
+			`realtime error: ${JSON.stringify(rt.lastError)}`,
+			text,
+		);
+	}
+	return text;
+}
+
+/** The stream failed, but `text` holds the transcript received before. */
+class IncompleteStream extends Error {
+	override readonly name = "IncompleteStream";
+	constructor(
+		message: string,
+		readonly text: string,
+	) {
+		super(message);
+	}
+}
+
+function writeText(text: string, args: Args): void {
+	process.stdout.write(
+		args.json ? `${JSON.stringify({ text })}\n` : `${text}\n`,
+	);
+}
+
 export async function main(
 	argv: string[] = process.argv.slice(2),
 ): Promise<number> {
@@ -307,26 +442,60 @@ export async function main(
 		args.device = Number(args.device);
 	}
 
-	if (args.stream) {
-		err(
-			"--stream is unavailable: the Codex Desktop upload route returns one final transcript.",
-		);
-		return 2;
-	}
+	if (args.listen) return await listenMain(args);
 
 	let text: string;
 	try {
-		text = await withInterrupt(args.input ? fileMain(args) : micMain(args));
+		const run = args.stream
+			? streamMain(args)
+			: args.input
+				? fileMain(args)
+				: micMain(args);
+		text = await withInterrupt(run);
+	} catch (error) {
+		if (error instanceof Interrupted) return 130;
+		// Keep the text that did arrive, but still report the failure.
+		if (error instanceof IncompleteStream && error.text !== "") {
+			writeText(error.text, args);
+		}
+		const e = error as Error;
+		err(`error: ${e.name}: ${e.message}`);
+		return 1;
+	}
+
+	writeText(text, args);
+	return 0;
+}
+
+async function listenMain(args: Args): Promise<number> {
+	if (args.stream || args.input) {
+		err(`${PROG}: error: --listen cannot be used with --stream or an input file`);
+		return 2;
+	}
+	let hotkey: ReturnType<typeof parseHotkey>;
+	try {
+		hotkey = parseHotkey(args.hotkey);
+	} catch (error) {
+		err(`${PROG}: error: argument --hotkey: ${(error as Error).message}`);
+		return 2;
+	}
+	try {
+		await withInterrupt(
+			listen({
+				inputArgs: micInputArgs(args.device),
+				hotkey,
+				language: args.language === "auto" ? null : args.language,
+				log: (message) => {
+					if (!args.quiet) err(message);
+				},
+			}),
+		);
 	} catch (error) {
 		if (error instanceof Interrupted) return 130;
 		const e = error as Error;
 		err(`error: ${e.name}: ${e.message}`);
 		return 1;
 	}
-
-	process.stdout.write(
-		args.json ? `${JSON.stringify({ text })}\n` : `${text}\n`,
-	);
 	return 0;
 }
 
@@ -347,5 +516,7 @@ async function withInterrupt<T>(work: Promise<T>): Promise<T> {
 }
 
 if (import.meta.main) {
-	process.exitCode = await main();
+	// werift leaves sockets and timers open after the peer closes, so the
+	// event loop never empties on its own after --stream. Exit explicitly.
+	process.exit(await main());
 }

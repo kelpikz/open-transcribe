@@ -3,12 +3,15 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
-  "bin": { "codex-audio": "./src/cli.ts" },
+  "bin": {
+    "codex-audio": "./src/cli.ts"
+  },
   "scripts": {
     "start": "bun run ./src/cli.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "build": "bun build --compile --outfile dist/codex-audio ./src/cli.ts"
+    "build": "bun build --compile --outfile dist/codex-audio ./src/cli.ts",
+    "build:sidecar": "bun build --compile --outfile ../app/src-tauri/binaries/codex-audio-sidecar-x86_64-pc-windows-msvc.exe ./src/sidecar.ts"
   },
   "dependencies": {
     "werift": "^0.24.4"

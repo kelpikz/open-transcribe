@@ -51,7 +51,7 @@ export function wavFromPcm(pcm: Uint8Array, sampleRate: number, channels: number
 }
 
 // ---------------------------------------------------------------------------
-// Opus over RTP (legacy WebRTC path — see codex/realtime.ts)
+// Opus over RTP (WebRTC path — see codex/realtime.ts)
 // ---------------------------------------------------------------------------
 
 /**
@@ -59,6 +59,10 @@ export function wavFromPcm(pcm: Uint8Array, sampleRate: number, channels: number
  *
  * ffmpeg sends RTP to a UDP port on loopback; every datagram is forwarded
  * straight to the werift track. Stopping is idempotent.
+ *
+ * `open()` only binds the port. Call `play()` once the peer is connected:
+ * ffmpeg starts sending at once, and audio sent before the data channel
+ * opens is lost.
  */
 export class RtpAudioSource {
   readonly track = new MediaStreamTrack({ kind: "audio" });
@@ -66,24 +70,37 @@ export class RtpAudioSource {
   private ffmpeg: FfmpegProcess | null = null;
   private stopped = false;
 
-  private constructor() {}
+  private port = 0;
+  private markReady: () => void = () => {};
+  /** Resolves when the first RTP packet arrives, so the audio really flows. */
+  readonly ready = new Promise<void>((resolve) => {
+    this.markReady = resolve;
+  });
 
-  /** Bind a port, start ffmpeg against it, and begin forwarding packets. */
-  static async start(inputArgs: string[]): Promise<RtpAudioSource> {
-    const source = new RtpAudioSource();
+  private constructor(private readonly inputArgs: string[]) {}
+
+  /** Bind a port and begin forwarding packets. ffmpeg does not start yet. */
+  static async open(inputArgs: string[]): Promise<RtpAudioSource> {
+    const source = new RtpAudioSource(inputArgs);
     source.socket.on("message", (packet) => {
-      if (!source.stopped) source.track.writeRtp(packet);
+      if (source.stopped) return;
+      source.markReady();
+      source.track.writeRtp(packet);
     });
-    // Errors here mean the socket is gone; the track simply stops receiving.
-    source.socket.on("error", () => source.stop());
-
-    const port = await new Promise<number>((resolve, reject) => {
+    source.port = await new Promise<number>((resolve, reject) => {
       source.socket.once("error", reject);
       source.socket.bind(0, "127.0.0.1", () => resolve(source.socket.address().port));
     });
+    // Errors from now on mean the socket is gone; the track stops receiving.
+    source.socket.on("error", () => source.stop());
+    return source;
+  }
 
-    source.ffmpeg = spawnFfmpeg([
-      ...inputArgs,
+  /** Start ffmpeg. Returns the process so the caller can wait for its end. */
+  play(): FfmpegProcess {
+    if (this.ffmpeg) return this.ffmpeg;
+    this.ffmpeg = spawnFfmpeg([
+      ...this.inputArgs,
       "-ac",
       String(CHANNELS),
       "-ar",
@@ -96,9 +113,9 @@ export class RtpAudioSource {
       String(FRAME_MS),
       "-f",
       "rtp",
-      `rtp://127.0.0.1:${port}`,
+      `rtp://127.0.0.1:${this.port}`,
     ]);
-    return source;
+    return this.ffmpeg;
   }
 
   stop(): void {

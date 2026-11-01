@@ -78,6 +78,10 @@ interface TokenResponse {
   id_token?: string;
 }
 
+export class AuthError extends Error {
+  override readonly name = "AuthError";
+}
+
 export class ChatGPTAuth {
   accessToken: string;
   refreshToken: string | null;
@@ -99,16 +103,22 @@ export class ChatGPTAuth {
   static load(): ChatGPTAuth {
     const path = authPath();
     if (!existsSync(path)) {
-      throw new Error(
+      throw new AuthError(
         `No Codex credentials at ${path}.\n` +
-          "Run `codex login` first — this tool reuses that session.",
+          "Run `codex login` first. This tool reuses that session.",
       );
     }
-    const raw = JSON.parse(readFileSync(path, "utf-8")) as AuthFile;
+    let raw: AuthFile;
+    try {
+      raw = JSON.parse(readFileSync(path, "utf-8")) as AuthFile;
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) throw new Error();
+    } catch {
+      throw new AuthError(`Could not read Codex credentials at ${path}. Run \`codex login\` again.`);
+    }
     const tokens = raw.tokens ?? {};
     const access = tokens.access_token;
-    if (!access) {
-      throw new Error(
+    if (typeof access !== "string" || !access) {
+      throw new AuthError(
         `${path} has no ChatGPT access_token (API-key-only login?).\n` +
           "Run `codex login` and choose 'Sign in with ChatGPT'.",
       );
@@ -145,7 +155,7 @@ export class ChatGPTAuth {
 
   async refresh(): Promise<this> {
     if (!this.refreshToken) {
-      throw new Error("Access token expired and no refresh_token stored; run `codex login`.");
+      throw new AuthError("Access token expired and no refresh_token stored; run `codex login`.");
     }
     const response = await fetch(TOKEN_URL, {
       method: "POST",
@@ -159,6 +169,10 @@ export class ChatGPTAuth {
       signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok) {
+      // 400 (invalid_grant), 401 and 403 mean the refresh token is not valid.
+      if ([400, 401, 403].includes(response.status)) {
+        throw new AuthError(`Your ChatGPT sign-in was rejected (${response.status}). Run \`codex login\` again.`);
+      }
       throw new Error(`${response.status} from ${TOKEN_URL}: ${(await response.text()).slice(0, 500)}`);
     }
     const body = (await response.json()) as TokenResponse;

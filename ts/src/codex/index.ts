@@ -5,7 +5,7 @@
 export * from "./auth.js";
 export * from "./transcribe.js";
 
-// realtime.ts is legacy and declares its own DEFAULT_MODEL, DEFAULT_LANGUAGE
+// realtime.ts (the --stream client) declares its own DEFAULT_MODEL, DEFAULT_LANGUAGE
 // and TRANSCRIBE_MODELS, so flattening it here would make those three names
 // ambiguous. It keeps its own name instead, with the two classes the package
 // exports lifted out beside it.

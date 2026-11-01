@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>codex-audio</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body data-state="starting">
+  <main class="page">
+    <h1 class="visually-hidden">codex-audio settings</h1>
+
+    <!-- How to dictate, or what is wrong and how to fix it. Filled by main.js. -->
+    <section class="status" id="status" aria-live="polite">
+      <div id="status-body"></div>
+      <div class="status-foot" id="status-foot">
+        <span id="account-text">Signed in with codex login</span>
+        <span id="last-text"></span>
+        <button class="btn on-tone" id="copy-last" type="button">Copy it again</button>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>Dictation</h2>
+
+      <div class="row" id="shortcut-row">
+        <div class="row-label">
+          <p>Shortcut</p>
+          <small class="capture-hint">Press the new keys. Press Esc to cancel.</small>
+        </div>
+        <span class="keys" id="hotkey" data-hotkey></span>
+        <button class="btn" id="change" type="button">Change</button>
+      </div>
+
+      <div class="row">
+        <div class="row-label">
+          <label for="language">Language</label>
+          <small>The language you speak.</small>
+        </div>
+        <div class="select">
+          <select id="language">
+            <option value="auto">Detect automatically</option>
+            <option value="en">English</option>
+            <option value="hi">Hindi</option>
+            <option value="ta">Tamil</option>
+            <option value="te">Telugu</option>
+            <option value="kn">Kannada</option>
+            <option value="ml">Malayalam</option>
+            <option value="de">German</option>
+            <option value="fr">French</option>
+            <option value="es">Spanish</option>
+            <option value="ja">Japanese</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-label"><label for="microphone">Microphone</label></div>
+        <span class="meter" id="meter" aria-hidden="true"></span>
+        <div class="select">
+          <select id="microphone"></select>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="row-label"><label for="after-speak">After you speak</label></div>
+        <div class="select">
+          <select id="after-speak">
+            <option value="paste">Paste the text</option>
+            <option value="copy">Copy it only</option>
+          </select>
+        </div>
+      </div>
+    </section>
+
+    <section class="group">
+      <h2>System</h2>
+
+      <div class="row">
+        <div class="row-label"><label for="autostart">Start with Windows</label></div>
+        <label class="switch"><input type="checkbox" id="autostart" /><span></span></label>
+      </div>
+
+      <div class="row">
+        <div class="row-label">
+          <label for="sounds">Sounds</label>
+          <small>A short tone when recording starts and stops.</small>
+        </div>
+        <label class="switch"><input type="checkbox" id="sounds" /><span></span></label>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <p class="links">
+        <span id="version"></span>
+        <a href="https://github.com/kelpikz/open-transcribe" data-external>GitHub</a>
+        <a href="https://github.com/kelpikz/open-transcribe/issues/new" data-external>Report a problem</a>
+      </p>
+      <p class="privacy">The audio goes to chatgpt.com through your ChatGPT account. The text is not saved.</p>
+    </footer>
+  </main>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <script src="main.js"></script>
+</body>
+</html>
