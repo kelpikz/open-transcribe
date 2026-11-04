@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 type Event = Record<string, unknown>;
 
 async function startSidecar() {
-	const dir = mkdtempSync(join(tmpdir(), "codex-audio-test-"));
+	const dir = mkdtempSync(join(tmpdir(), "open-transcribe-test-"));
 	writeFileSync(join(dir, "auth.json"), JSON.stringify({ tokens: { access_token: "test-token" } }));
 	let status = 200;
 	let text = "Test transcript.";

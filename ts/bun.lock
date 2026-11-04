@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "codex-audio",
+      "name": "open-transcribe",
       "dependencies": {
         "werift": "^0.24.4",
       },

@@ -24,7 +24,7 @@ export function micInputArgs(device?: Device): string[] {
     default: {
       // ffmpeg cannot detect which Linux sound server is live; PulseAudio is
       // the common case, with ALSA available through the environment.
-      const useAlsa = process.env.CODEX_AUDIO_LINUX_BACKEND === "alsa";
+      const useAlsa = (process.env.OPEN_TRANSCRIBE_LINUX_BACKEND ?? process.env.CODEX_AUDIO_LINUX_BACKEND) === "alsa";
       return useAlsa
         ? ["-f", "alsa", "-i", String(device ?? "default")]
         : ["-f", "pulse", "-i", String(device ?? "default")];

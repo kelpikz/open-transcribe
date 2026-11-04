@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * codex-audio — speak, get text. Uses your ChatGPT subscription via Codex's login.
+ * open-transcribe — speak, get text. Uses your ChatGPT subscription via Codex's login.
  */
 
 import { readFileSync } from "node:fs";
@@ -26,7 +26,7 @@ import {
 import { DEFAULT_HOTKEY, listen, parseHotkey } from "./listen.js";
 import { Renderer } from "./renderer.js";
 
-const PROG = "codex-audio";
+const PROG = "open-transcribe";
 
 function err(message: string): void {
 	process.stderr.write(`${message}\n`);
@@ -291,7 +291,7 @@ async function micMain(args: Args): Promise<string> {
 	});
 	if (!args.quiet) err("transcribing…");
 	const text = await transcribeAudio(data, {
-		filename: "codex-audio.wav",
+		filename: "open-transcribe.wav",
 		contentType: "audio/wav",
 		language: args.language === "auto" ? null : args.language,
 	});

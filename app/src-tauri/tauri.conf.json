@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "codex-audio",
+  "productName": "open-transcribe",
   "version": "0.1.0",
   "identifier": "com.kelpikz.codex-audio",
   "build": {
@@ -11,7 +11,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "codex-audio",
+        "title": "open-transcribe",
         "url": "index.html",
         "width": 600,
         "height": 780,
@@ -22,7 +22,7 @@
       },
       {
         "label": "overlay",
-        "title": "codex-audio recording",
+        "title": "open-transcribe recording",
         "url": "overlay.html",
         "width": 180,
         "height": 48,
@@ -52,7 +52,7 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/codex-audio-sidecar"
+      "binaries/open-transcribe-sidecar"
     ]
   }
 }

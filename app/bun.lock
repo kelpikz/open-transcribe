@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "codex-audio-app",
+      "name": "open-transcribe-app",
       "devDependencies": {
         "@tauri-apps/cli": "^2.12.4",
       },

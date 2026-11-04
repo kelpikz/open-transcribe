@@ -191,7 +191,7 @@ export class ChatGPTAuth {
   headers(): Record<string, string> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.accessToken}`,
-      "User-Agent": "codex-audio/0.1 (reverse-engineered from codex-cli)",
+      "User-Agent": "open-transcribe/0.1 (reverse-engineered from codex-cli)",
       originator: "codex_cli_rs",
     };
     if (this.accountId) {
@@ -210,7 +210,7 @@ export class ChatGPTAuth {
   transcriptionHeaders(): Record<string, string> {
     const headers: Record<string, string> = {
       Authorization: `Bearer ${this.accessToken}`,
-      "User-Agent": "codex-audio/0.1 (reverse-engineered from Codex Desktop)",
+      "User-Agent": "open-transcribe/0.1 (reverse-engineered from Codex Desktop)",
       "ChatGPT-Account-Id": this.accountId || "",
       originator: "Codex Desktop",
       "x-codex-base64": "1",

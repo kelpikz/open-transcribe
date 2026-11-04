@@ -1,6 +1,6 @@
-# How codex-audio works
+# How open-transcribe works
 
-`codex-audio` changes speech into text. It uses the ChatGPT credentials that
+`open-transcribe` changes speech into text. It uses the ChatGPT credentials that
 `codex login` writes to disk. It does not need an OpenAI API key.
 
 ## How to read the diagrams
@@ -35,7 +35,7 @@ sequenceDiagram
     participant OAUTH as auth.openai.com
     participant API as chatgpt.com backend
 
-    User->>CLI: codex-audio [file]
+    User->>CLI: open-transcribe [file]
     CLI->>CLI: parseArgs(argv)
 
     alt Route 1 of 3: the user gives --list-devices

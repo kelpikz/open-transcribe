@@ -108,7 +108,7 @@ function statusContent() {
       if (app.code === "ffmpeg") {
         return problem(
           "ffmpeg is missing",
-          ["codex-audio needs ffmpeg to record. Run ", code(FFMPEG_COMMAND), " in a terminal, then restart the app."],
+          ["open-transcribe needs ffmpeg to record. Run ", code(FFMPEG_COMMAND), " in a terminal, then restart the app."],
           [["Copy the command", () => copyText(FFMPEG_COMMAND, "The command")]],
         );
       }
@@ -130,7 +130,7 @@ function statusContent() {
   if (!app.signedIn) {
     return problem(
       "Signed out",
-      ["codex-audio uses the ChatGPT sign-in of Codex. Run ", code(LOGIN_COMMAND), " in a terminal. Then click Check again."],
+      ["open-transcribe uses the ChatGPT sign-in of Codex. Run ", code(LOGIN_COMMAND), " in a terminal. Then click Check again."],
       [
         ["Check again", () => command({ cmd: "checkAccount" })],
         ["Copy the command", () => copyText(LOGIN_COMMAND, "The command")],

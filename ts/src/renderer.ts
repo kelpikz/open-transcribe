@@ -36,9 +36,9 @@ export class Renderer {
 		readonly color: boolean,
 	) {
 		// Node always writes UTF-8 to stderr, so there is no encoding to
-		// interrogate. CODEX_AUDIO_ASCII covers consoles whose font or code page
+		// interrogate. OPEN_TRANSCRIBE_ASCII covers consoles whose font or code page
 		// cannot show the glyphs.
-		this.glyphs = process.env.CODEX_AUDIO_ASCII
+		this.glyphs = (process.env.OPEN_TRANSCRIBE_ASCII ?? process.env.CODEX_AUDIO_ASCII)
 			? { live: "...", ok: "*", rule: "-" }
 			: { live: "…", ok: "✓", rule: "─" };
 	}

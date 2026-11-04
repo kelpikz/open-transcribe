@@ -13,7 +13,7 @@
  *   stdout (events):   {ev: "state" | "level" | "settings" | "devices" | "account"
  *                       | "last" | "copied" | "error", ...}
  *
- * Usage: codex-audio-sidecar --data-dir DIR
+ * Usage: open-transcribe-sidecar --data-dir DIR
  */
 
 import { spawnSync } from "node:child_process";
@@ -291,7 +291,7 @@ function checkMic(): void {
 		deviceNames = [];
 		currentDevice = null;
 		sendDevices();
-		setState("error", "codex-audio needs ffmpeg to record.", "ffmpeg");
+		setState("error", "open-transcribe needs ffmpeg to record.", "ffmpeg");
 		return;
 	}
 	deviceNames = audioDeviceNames();
@@ -414,7 +414,7 @@ async function handleClip(pcm: Buffer, target: desktop.ForegroundWindow): Promis
 	}
 	const text = (
 		await transcribeAudio(wavFromPcm(pcm, RECORD_SAMPLE_RATE, RECORD_CHANNELS), {
-			filename: "codex-audio.wav",
+			filename: "open-transcribe.wav",
 			contentType: "audio/wav",
 			language: settings.language === "auto" ? null : settings.language,
 		})

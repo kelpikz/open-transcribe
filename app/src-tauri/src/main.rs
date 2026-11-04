@@ -1,7 +1,7 @@
 // No console window in a release build.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-//! The desktop shell of codex-audio.
+//! The desktop shell of open-transcribe.
 //!
 //! The Bun sidecar does the work: microphone, shortcut, transcription and
 //! settings. This file only starts the sidecar, forwards its events to the
@@ -165,7 +165,7 @@ fn start_sidecar(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         concat!(env!("CARGO_MANIFEST_DIR"), "/../../ts/src/sidecar.ts"),
     ]);
     #[cfg(not(debug_assertions))]
-    let command = app.shell().sidecar("codex-audio-sidecar")?;
+    let command = app.shell().sidecar("open-transcribe-sidecar")?;
 
     let (mut events, child) = command
         .args(["--data-dir", &data_dir.to_string_lossy()])
@@ -236,12 +236,12 @@ fn main() {
                 pill.set_ignore_cursor_events(true)?;
             }
 
-            let open = MenuItem::with_id(app, "open", "Open codex-audio", true, None::<&str>)?;
+            let open = MenuItem::with_id(app, "open", "Open open-transcribe", true, None::<&str>)?;
             let exit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &exit])?;
             TrayIconBuilder::new()
                 .icon(app.default_window_icon().cloned().ok_or("no app icon")?)
-                .tooltip("codex-audio")
+                .tooltip("open-transcribe")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -272,7 +272,7 @@ fn main() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running codex-audio");
+        .expect("error while running open-transcribe");
 }
 
 #[cfg(test)]

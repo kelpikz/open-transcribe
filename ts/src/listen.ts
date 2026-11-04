@@ -150,7 +150,7 @@ export async function deliver(
 			: null;
 	if (reason !== null) {
 		await desktop.setClipboardText(text);
-		desktop.notify("codex-audio", `Copied to the clipboard (${reason}).`);
+		desktop.notify("open-transcribe", `Copied to the clipboard (${reason}).`);
 		return { kind: "copied", reason };
 	}
 
@@ -163,7 +163,7 @@ export async function deliver(
 			? "a hotkey or modifier key is still held"
 			: null;
 	if (finalReason !== null) {
-		desktop.notify("codex-audio", `Copied to the clipboard (${finalReason}).`);
+		desktop.notify("open-transcribe", `Copied to the clipboard (${finalReason}).`);
 		return { kind: "copied", reason: finalReason };
 	}
 	desktop.sendCtrlV();
@@ -210,7 +210,7 @@ async function handleClip(
 	log(`transcribing ${(ms / 1000).toFixed(1)} s…`);
 	const text = (
 		await transcribeAudio(wavFromPcm(pcm, RECORD_SAMPLE_RATE, RECORD_CHANNELS), {
-			filename: "codex-audio.wav",
+			filename: "open-transcribe.wav",
 			contentType: "audio/wav",
 			language: options.language,
 		})
