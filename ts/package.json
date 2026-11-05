@@ -11,7 +11,7 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build": "bun build --compile --outfile dist/open-transcribe ./src/cli.ts",
-    "build:sidecar": "bun build --compile --outfile ../app/src-tauri/binaries/open-transcribe-sidecar-x86_64-pc-windows-msvc.exe ./src/sidecar.ts"
+    "build:sidecar": "bun -e \"require('fs').mkdirSync('../app/src-tauri/binaries', { recursive: true })\" && bun build --compile --outfile ../app/src-tauri/binaries/open-transcribe-sidecar-x86_64-pc-windows-msvc.exe ./src/sidecar.ts"
   },
   "dependencies": {
     "werift": "^0.24.4"
