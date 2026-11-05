@@ -208,6 +208,11 @@ bun run dev      # build the sidecar, then start the app
 bun run build    # build the sidecar, then make the installer
 ```
 
+To make a release, set the same version in `app/package.json`,
+`app/src-tauri/tauri.conf.json` and `app/src-tauri/Cargo.toml`. Then push a
+tag such as `v0.2.0`. GitHub Actions makes a draft release with the installer
+and the update files. Publish the draft, and the app offers the update.
+
 To run the tests:
 
 ```bash
@@ -231,6 +236,10 @@ bun test
 | `app/ui/` | Settings window and recording pill |
 
 </details>
+
+## License
+
+[MIT](LICENSE)
 
 ## Important
 

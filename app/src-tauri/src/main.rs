@@ -17,6 +17,7 @@ use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, State, WindowEvent,
 };
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_updater::UpdaterExt;
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
@@ -73,6 +74,39 @@ fn send(line: String, sidecar: State<Sidecar>) -> Result<(), String> {
     child
         .write(format!("{line}\n").as_bytes())
         .map_err(|e| e.to_string())
+}
+
+/// The version of a newer release, or None if this version is the latest.
+#[tauri::command]
+async fn check_update(app: AppHandle) -> Result<Option<String>, String> {
+    let update = app.updater().map_err(|e| e.to_string())?.check().await.map_err(|e| e.to_string())?;
+    Ok(update.map(|update| update.version))
+}
+
+/// Download the newer release, stop the sidecar, install, and restart.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let update = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or("This version is the latest.")?;
+    let bytes = update
+        .download(|_, _| {}, || {})
+        .await
+        .map_err(|e| e.to_string())?;
+    // The installer must replace the sidecar file, so stop the sidecar first.
+    if let Some(sidecar) = app.try_state::<Sidecar>() {
+        if let Ok(mut guard) = sidecar.0.lock() {
+            if let Some(child) = guard.take() {
+                let _ = child.kill();
+            }
+        }
+    }
+    update.install(bytes).map_err(|e| e.to_string())?;
+    app.restart();
 }
 
 fn show_main(app: &AppHandle) {
@@ -221,7 +255,8 @@ fn main() {
             MacosLauncher::LaunchAgent,
             Some(vec![AUTOSTART_ARG]),
         ))
-        .invoke_handler(tauri::generate_handler![send])
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![send, check_update, install_update])
         .setup(|app| {
             start_sidecar(app.handle())?;
 

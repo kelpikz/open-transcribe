@@ -9,9 +9,9 @@
  * Protocol: one JSON object for each line.
  *   stdin  (commands): {cmd: "getState" | "setHotkey" | "pauseHotkey" | "setLanguage"
  *                       | "setMicrophone" | "listDevices" | "setAfterSpeak" | "setSounds"
- *                       | "copyLast" | "checkAccount", ...}
+ *                       | "copyLast" | "checkAccount" | "diagnose" | "testRecording", ...}
  *   stdout (events):   {ev: "state" | "level" | "settings" | "devices" | "account"
- *                       | "last" | "copied" | "error", ...}
+ *                       | "last" | "copied" | "diagnostics" | "test" | "error", ...}
  *
  * Usage: open-transcribe-sidecar --data-dir DIR
  */
@@ -32,6 +32,7 @@ import {
 } from "./audio/index.js";
 import { AuthError, ChatGPTAuth, TranscriptionError, transcribeAudio } from "./codex/index.js";
 import * as desktop from "./desktop/win32.js";
+import { checkFfmpeg, checkMicrophone, checkSignIn, microphoneHelp, type Check } from "./diagnostics.js";
 import {
 	DEFAULT_HOTKEY,
 	MIN_CLIP_MS,
@@ -307,10 +308,11 @@ function checkMic(): void {
 }
 
 function closeMic(): void {
-	const open = [mic, opening];
+	const open = [mic, opening, testMic];
 	// Clear first, so the exit of ffmpeg is not shown as an error.
 	mic = null;
 	opening = null;
+	testMic = null;
 	for (const one of open) one?.stop();
 }
 
@@ -448,7 +450,8 @@ async function handleClip(pcm: Buffer, target: desktop.ForegroundWindow): Promis
  * recording as soon as the app is ready.
  */
 function pollHotkey(): void {
-	const down = !hotkeyPaused && allDown(hotkey);
+	// The shortcut does nothing during a test recording.
+	const down = !hotkeyPaused && !testRunning && allDown(hotkey);
 	if (!down) {
 		holdUsed = false;
 		if (state === "opening") cancel();
@@ -463,12 +466,99 @@ function pollHotkey(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+
+const TEST_MS = 3000;
+/** The microphone of a test recording from the diagnostics. */
+let testMic: LiveMicrophone | null = null;
+let testRunning = false;
+
+/** Run the checks and send the results. The sign-in check can use the network. */
+async function diagnose(): Promise<void> {
+	if (!busy()) checkMic();
+	const ffmpeg = checkFfmpeg();
+	const microphone: Check = ffmpeg.status === "pass"
+		? checkMicrophone(deviceNames, currentDevice)
+		: { id: "microphone", status: "warn", title: "Microphone not checked", detail: "Install ffmpeg first." };
+	const signin = await checkSignIn();
+	// Keep the sign-in at the top of the page the same as the check.
+	if (signin.status === "fail") {
+		signOut(signin.detail);
+	} else if (!signedIn) {
+		signedIn = true;
+		accountMessage = "";
+		sendAccount();
+	}
+	send({ ev: "diagnostics", checks: [ffmpeg, signin, microphone] });
+}
+
+/** Record for a few seconds, then show the text, so the user can test the full path. */
+async function testRecording(): Promise<void> {
+	const result = (phase: string, extra: Record<string, unknown> = {}) => send({ ev: "test", phase, ...extra });
+	if (busy()) {
+		result("failed", { message: "Wait until the text is ready, then try again." });
+		return;
+	}
+	if (currentDevice === null) {
+		result("failed", { message: "No microphone was found." });
+		return;
+	}
+	testRunning = true;
+	let step: "open" | "record" | "send" = "open";
+	try {
+		result("opening");
+		const opened = await LiveMicrophone.open(micInputArgs(currentDevice), {
+			prerollMs: 0,
+			onSpawn: (spawned) => {
+				testMic = spawned;
+			},
+		});
+		step = "record";
+		opened.begin();
+		result("recording", { ms: TEST_MS });
+		const meter = setInterval(() => send({ ev: "level", level: opened.level() }), LEVEL_MS);
+		await new Promise((resolve) => setTimeout(resolve, TEST_MS));
+		clearInterval(meter);
+		const pcm = opened.end();
+		opened.stop();
+		testMic = null;
+		send({ ev: "level", level: 0 });
+		if (pcmPeak(pcm) < SILENT_PEAK) {
+			result("failed", { message: `No sound was heard. ${microphoneHelp()}` });
+			return;
+		}
+		step = "send";
+		result("transcribing");
+		const text = (
+			await transcribeAudio(wavFromPcm(pcm, RECORD_SAMPLE_RATE, RECORD_CHANNELS), {
+				filename: "open-transcribe-test.wav",
+				contentType: "audio/wav",
+				language: settings.language === "auto" ? null : settings.language,
+			})
+		).trim();
+		result("done", { text });
+	} catch (error) {
+		const message = (error as Error).message;
+		result("failed", {
+			message: step === "send"
+				? `The transcription failed: ${message}`
+				: `The microphone did not open: ${message} ${microphoneHelp()}`,
+		});
+	} finally {
+		testMic?.stop();
+		testMic = null;
+		testRunning = false;
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
-/** True from the press of the shortcut until the text is ready. */
+/** True from the press of the shortcut until the text is ready, and during a test. */
 function busy(): boolean {
-	return state === "opening" || state === "recording" || state === "transcribing";
+	return testRunning || state === "opening" || state === "recording" || state === "transcribing";
 }
 
 async function handleCommand(command: Record<string, unknown>): Promise<void> {
@@ -537,6 +627,12 @@ async function handleCommand(command: Record<string, unknown>): Promise<void> {
 			return;
 		case "checkAccount":
 			await checkAccount();
+			return;
+		case "diagnose":
+			await diagnose();
+			return;
+		case "testRecording":
+			await testRecording();
 			return;
 		default:
 			fail(`unknown command: ${JSON.stringify(command)}`);

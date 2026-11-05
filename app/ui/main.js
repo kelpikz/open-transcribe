@@ -3,9 +3,12 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-const REPO = "kelpikz/open-transcribe";
 const LOGIN_COMMAND = "codex login";
 const FFMPEG_COMMAND = "winget install ffmpeg";
+const FFMPEG_PROMPT =
+  "Install ffmpeg on this computer so that the `ffmpeg` command works in a new terminal. " +
+  "Use the normal package manager for this OS (winget on Windows, Homebrew on macOS, apt/dnf/pacman on Linux). " +
+  "Make sure that ffmpeg is on the PATH. Then run `ffmpeg -version` to show that it works.";
 
 const $ = (id) => document.getElementById(id);
 
@@ -109,7 +112,10 @@ function statusContent() {
         return problem(
           "ffmpeg is missing",
           ["open-transcribe needs ffmpeg to record. Run ", code(FFMPEG_COMMAND), " in a terminal, then restart the app."],
-          [["Copy the command", () => copyText(FFMPEG_COMMAND, "The command")]],
+          [
+            ["Copy the command", () => copyText(FFMPEG_COMMAND, "The command")],
+            ["Copy a prompt for Codex", () => copyText(FFMPEG_PROMPT, "The prompt")],
+          ],
         );
       }
       if (app.code === "microphone") {
@@ -343,17 +349,6 @@ $("autostart").addEventListener("change", async (event) => {
 // Version and links
 // ---------------------------------------------------------------------------
 
-/** True if version `a` is newer than version `b` ("1.2.0" > "1.1.9"). */
-function isNewer(a, b) {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const diff = (pa[i] || 0) - (pb[i] || 0);
-    if (diff !== 0) return diff > 0;
-  }
-  return false;
-}
-
 async function showVersion() {
   const node = $("version");
   let version = "";
@@ -363,26 +358,32 @@ async function showVersion() {
     return;
   }
   node.textContent = `Version ${version}`;
+  let latest = null;
   try {
-    const response = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: { Accept: "application/vnd.github+json" },
-    });
-    // No release yet, or no network: show the version only.
-    if (!response.ok) return;
-    const release = await response.json();
-    const latest = String(release.tag_name ?? "").replace(/^v/, "");
-    if (!/^\d+(\.\d+)*$/.test(latest)) return;
-    if (isNewer(latest, version)) {
-      const link = el("a", "", `Version ${latest} is available`);
-      link.href = release.html_url;
-      link.dataset.external = "";
-      node.replaceChildren(`Version ${version} · `, link);
-    } else {
-      node.textContent = `Version ${version} · up to date`;
-    }
+    latest = await invoke("check_update");
   } catch {
-    // No network. The version alone is enough.
+    // No network, or no release yet. The version alone is enough.
+    return;
   }
+  if (!latest) {
+    node.textContent = `Version ${version} · up to date`;
+    return;
+  }
+  const button = el("button", "btn", `Update to ${latest}`);
+  button.type = "button";
+  button.addEventListener("click", async () => {
+    button.disabled = true;
+    button.textContent = "Updating…";
+    try {
+      // The app closes, installs the update, and starts again.
+      await invoke("install_update");
+    } catch (error) {
+      toast(`The update failed: ${error}`, true);
+      button.disabled = false;
+      button.textContent = `Update to ${latest}`;
+    }
+  });
+  node.replaceChildren(`Version ${version} · `, button);
 }
 
 // Links open in the default browser, not in this window.
@@ -391,6 +392,65 @@ document.addEventListener("click", (event) => {
   if (!link) return;
   event.preventDefault();
   invoke("plugin:shell|open", { path: link.href }).catch((error) => toast(String(error), true));
+});
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+
+/** A button that fixes a failed check, or null. */
+function fixFor(check) {
+  if (check.status === "pass") return null;
+  if (check.id === "ffmpeg") return ["Copy a prompt for Codex", () => copyText(FFMPEG_PROMPT, "The prompt")];
+  if (check.id === "signin") return ["Copy the command", () => copyText(LOGIN_COMMAND, "The command")];
+  return null;
+}
+
+function renderChecks(checks) {
+  $("run-checks").disabled = false;
+  $("checks").replaceChildren(
+    ...checks.map((check) => {
+      const row = el("div", "row");
+      const label = el("div", "row-label");
+      label.append(el("p", "", check.title));
+      if (check.detail) label.append(el("small", "", check.detail));
+      row.append(el("span", `mark ${check.status}`), label);
+      const fix = fixFor(check);
+      if (fix) {
+        const button = el("button", "btn", fix[0]);
+        button.type = "button";
+        button.addEventListener("click", fix[1]);
+        row.append(button);
+      }
+      return row;
+    }),
+  );
+}
+
+const TEST_PHASES = {
+  opening: "Opening the microphone…",
+  recording: "Speak now…",
+  transcribing: "Converting the speech to text…",
+};
+
+function renderTest({ phase, text, message }) {
+  const node = $("test-text");
+  const button = $("test-recording");
+  const running = phase in TEST_PHASES;
+  button.disabled = running;
+  node.classList.toggle("done", phase === "done");
+  if (running) node.textContent = TEST_PHASES[phase];
+  else if (phase === "done") node.textContent = text ? `“${text}”` : "No text was returned. Speak louder, then try again.";
+  else node.textContent = message;
+}
+
+$("run-checks").addEventListener("click", () => {
+  $("run-checks").disabled = true;
+  command({ cmd: "diagnose" });
+});
+$("test-recording").addEventListener("click", () => {
+  renderTest({ phase: "opening" });
+  command({ cmd: "testRecording" });
 });
 
 // ---------------------------------------------------------------------------
@@ -442,7 +502,14 @@ listen("sidecar", ({ payload }) => {
     case "copied":
       toast("The last text is copied.");
       break;
+    case "diagnostics":
+      renderChecks(payload.checks ?? []);
+      break;
+    case "test":
+      renderTest(payload);
+      break;
     case "error":
+      $("run-checks").disabled = false;
       toast(payload.message, true);
       break;
   }
@@ -450,5 +517,6 @@ listen("sidecar", ({ payload }) => {
 
 // The sidecar may have started before this page loaded. Ask for everything.
 command({ cmd: "getState" });
+command({ cmd: "diagnose" });
 renderStatus();
 showVersion();

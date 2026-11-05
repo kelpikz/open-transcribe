@@ -25,6 +25,7 @@
   --ok: #1f9d55;
   --error-tone: #fcefed;
   --error: #c4321f;
+  --warn: #c98a00;
   --focus: #151515;
 
   /* Segoe UI is the fallback, for example for Hindi or Tamil text. */
@@ -48,6 +49,7 @@
     --ok: #3ccf7a;
     --error-tone: #2a1715;
     --error: #ff7a68;
+    --warn: #f2b84b;
     --focus: #ededed;
   }
 }
@@ -203,6 +205,13 @@ h2 { margin: 0 0 2px; font-size: 13.5px; font-weight: 600; }
   border-bottom: 1px solid var(--line);
 }
 .row:last-child { border-bottom: 0; }
+
+.group-head { display: flex; align-items: center; justify-content: space-between; }
+.mark { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--control); }
+.mark.pass { background: var(--ok); }
+.mark.warn { background: var(--warn); }
+.mark.fail { background: var(--error); }
+#test-text.done { color: var(--text); }
 
 .row-label { flex: 1; min-width: 0; }
 .row-label label, .row-label p { display: block; }
