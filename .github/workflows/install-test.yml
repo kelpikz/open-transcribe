@@ -1,0 +1,68 @@
+# Build the installer, install it on a clean Windows machine, check the
+# files, uninstall it, and check that nothing stays behind.
+name: install-test
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install-test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - run: bun install
+        working-directory: ts
+      - run: bun install
+        working-directory: app
+      - run: bun run build
+        working-directory: app
+
+      - name: Install
+        run: |
+          $setup = Get-ChildItem app/src-tauri/target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          if (-not $setup) { throw "No installer was built" }
+          Start-Process $setup.FullName -ArgumentList "/S" -Wait
+
+      - name: Check installed files
+        run: |
+          $dir = "$env:LOCALAPPDATA\open-transcribe"
+          Get-ChildItem $dir
+          foreach ($file in "open-transcribe-sidecar.exe", "uninstall.exe") {
+            if (-not (Test-Path "$dir\$file")) { throw "Missing $file" }
+          }
+          $main = Get-ChildItem "$dir\*.exe" | Where-Object { $_.Name -notin "open-transcribe-sidecar.exe", "uninstall.exe" } | Select-Object -First 1
+          if (-not $main) { throw "Missing the main app exe" }
+          "MAIN_EXE=$($main.FullName)" >> $env:GITHUB_ENV
+
+      - name: Add the Start with Windows entry
+        # The app adds this entry when the user turns on "Start with Windows".
+        run: |
+          $run = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+          New-ItemProperty -Path $run -Name "open-transcribe" -Value "`"$env:MAIN_EXE`" --autostart" -Force
+
+      - name: Uninstall
+        run: |
+          Start-Process "$env:LOCALAPPDATA\open-transcribe\uninstall.exe" -ArgumentList "/S" -Wait
+          # The uninstaller copies itself to a temp folder and runs from there.
+          for ($i = 0; $i -lt 30 -and (Test-Path $env:MAIN_EXE); $i++) {
+            Start-Sleep -Seconds 1
+          }
+
+      - name: Check that nothing stays behind
+        run: |
+          if (Test-Path $env:MAIN_EXE) { throw "The app is still installed" }
+          $run = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+          if ($run.PSObject.Properties.Name -contains "open-transcribe") { throw "The Start with Windows entry is still there" }
+          Write-Host "Uninstall is clean"
