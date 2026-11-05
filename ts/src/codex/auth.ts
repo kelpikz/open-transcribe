@@ -21,7 +21,7 @@
  * well as Bun.
  */
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -39,19 +39,24 @@ export function authPath(): string {
   return join(codexHome(), "auth.json");
 }
 
-/** Read `exp` out of a JWT without verifying it (we only need the clock). */
-export function jwtExp(token: string): number | null {
+/** Read the claims of a JWT without verifying it. */
+export function jwtClaims(token: string): Record<string, unknown> | null {
   try {
     const payload = token.split(".")[1];
     if (payload === undefined) return null;
     const claims: unknown = JSON.parse(base64UrlDecode(payload));
-    if (typeof claims !== "object" || claims === null) return null;
-    const exp = (claims as Record<string, unknown>).exp;
-    const seconds = typeof exp === "number" ? exp : typeof exp === "string" ? Number(exp) : NaN;
-    return Number.isFinite(seconds) ? seconds : null;
+    if (typeof claims !== "object" || claims === null || Array.isArray(claims)) return null;
+    return claims as Record<string, unknown>;
   } catch {
     return null;
   }
+}
+
+/** Read `exp` out of a JWT without verifying it (we only need the clock). */
+export function jwtExp(token: string): number | null {
+  const exp = jwtClaims(token)?.exp;
+  const seconds = typeof exp === "number" ? exp : typeof exp === "string" ? Number(exp) : NaN;
+  return Number.isFinite(seconds) ? seconds : null;
 }
 
 function base64UrlDecode(value: string): string {
@@ -77,6 +82,9 @@ interface TokenResponse {
   refresh_token?: string;
   id_token?: string;
 }
+
+/** The refresh in progress in this process, if there is one. */
+let refreshing: Promise<unknown> | null = null;
 
 export class AuthError extends Error {
   override readonly name = "AuthError";
@@ -144,7 +152,46 @@ export class ChatGPTAuth {
       id_token: this.idToken,
     };
     raw.last_refresh = new Date().toISOString().replace(/\.\d+Z$/, "Z");
-    writeFileSync(path, JSON.stringify(raw, null, 2), "utf-8");
+    // Write a temporary file, then rename it. Then Codex never reads a
+    // half-written file.
+    const text = JSON.stringify(raw, null, 2);
+    const tmp = `${path}.${process.pid}.tmp`;
+    try {
+      writeFileSync(tmp, text, "utf-8");
+      renameSync(tmp, path);
+    } catch {
+      // On Windows, the rename fails if another program has the file open.
+      rmSync(tmp, { force: true });
+      writeFileSync(path, text, "utf-8");
+    }
+  }
+
+  /**
+   * Take the tokens in auth.json if they are not the tokens we have. Codex
+   * (or another copy of this app) can refresh them at any time, and each
+   * refresh token works only one time.
+   */
+  private takeNewerTokens(): boolean {
+    let disk: ChatGPTAuth;
+    try {
+      disk = ChatGPTAuth.load();
+    } catch {
+      return false;
+    }
+    if (disk.accessToken === this.accessToken && disk.refreshToken === this.refreshToken) {
+      return false;
+    }
+    this.accessToken = disk.accessToken;
+    this.refreshToken = disk.refreshToken;
+    this.accountId = disk.accountId;
+    this.idToken = disk.idToken;
+    return true;
+  }
+
+  /** The email of the ChatGPT account, from the ID token. */
+  get email(): string | null {
+    const email = this.idToken ? jwtClaims(this.idToken)?.email : null;
+    return typeof email === "string" ? email : null;
   }
 
   get expired(): boolean {
@@ -154,23 +201,32 @@ export class ChatGPTAuth {
   }
 
   async refresh(): Promise<this> {
+    // Two refreshes in this process must not send the same refresh token.
+    if (refreshing) await refreshing.catch(() => {});
+    const run = this.refreshOnce();
+    refreshing = run;
+    try {
+      return await run;
+    } finally {
+      if (refreshing === run) refreshing = null;
+    }
+  }
+
+  private async refreshOnce(): Promise<this> {
+    // Another program can have refreshed the tokens already.
+    if (this.takeNewerTokens() && !this.expired) return this;
     if (!this.refreshToken) {
       throw new AuthError("Access token expired and no refresh_token stored; run `codex login`.");
     }
-    const response = await fetch(TOKEN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        client_id: CLIENT_ID,
-        grant_type: "refresh_token",
-        refresh_token: this.refreshToken,
-        scope: "openid profile email",
-      }),
-      signal: AbortSignal.timeout(30_000),
-    });
+    let response = await requestRefresh(this.refreshToken);
+    // A rejected refresh token can mean that another program used it first.
+    // Then auth.json has the new tokens. Sign out only if it does not.
+    if (isRejected(response) && this.takeNewerTokens()) {
+      if (!this.expired) return this;
+      if (this.refreshToken) response = await requestRefresh(this.refreshToken);
+    }
     if (!response.ok) {
-      // 400 (invalid_grant), 401 and 403 mean the refresh token is not valid.
-      if ([400, 401, 403].includes(response.status)) {
+      if (isRejected(response)) {
         throw new AuthError(`Your ChatGPT sign-in was rejected (${response.status}). Run \`codex login\` again.`);
       }
       throw new Error(`${response.status} from ${TOKEN_URL}: ${(await response.text()).slice(0, 500)}`);
@@ -220,6 +276,25 @@ export class ChatGPTAuth {
     };
     return Object.fromEntries(Object.entries(headers).filter(([, value]) => value));
   }
+}
+
+function requestRefresh(refreshToken: string): Promise<Response> {
+  return fetch(TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: CLIENT_ID,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      scope: "openid profile email",
+    }),
+    signal: AbortSignal.timeout(30_000),
+  });
+}
+
+/** 400 (invalid_grant), 401 and 403 mean the refresh token is not valid. */
+function isRejected(response: Response): boolean {
+  return [400, 401, 403].includes(response.status);
 }
 
 export function chatgptBaseUrl(): string {
