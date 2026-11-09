@@ -24,6 +24,19 @@ jobs:
         working-directory: ts
       - run: bun install
         working-directory: app
+      - name: Check desktop release metadata
+        run: bun run check:release
+        working-directory: app
+      - name: Load release notes
+        id: notes
+        shell: pwsh
+        run: |
+          $notesPath = Join-Path 'docs/releases' ($env:GITHUB_REF_NAME + '.md')
+          $notes = Get-Content -LiteralPath $notesPath -Raw
+          $delimiter = [guid]::NewGuid().ToString()
+          "body<<$delimiter" >> $env:GITHUB_OUTPUT
+          $notes >> $env:GITHUB_OUTPUT
+          $delimiter >> $env:GITHUB_OUTPUT
       - run: bun run sidecar
         working-directory: app
 
@@ -38,4 +51,5 @@ jobs:
           args: --config src-tauri/tauri.release.conf.json
           tagName: ${{ github.ref_name }}
           releaseName: open-transcribe ${{ github.ref_name }}
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
