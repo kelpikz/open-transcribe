@@ -157,3 +157,62 @@ test("an insertion failure retains the transcript for Copy it again", async () =
 		expect(app.events.some((e) => e.ev === "testClipboard" && e.text === "Test transcript.")).toBe(true);
 	} finally { await app.close(); }
 }, 10000);
+
+test("releasing before the first audio never starts recording", async () => {
+	const app = await startSidecar();
+	try {
+		app.events.length = 0;
+		app.control({ held: true, scenario: "releaseOnReady" });
+		await app.waitFor(() => app.events.some(e => e.state === "idle"));
+		expect(app.events.some(e => e.state === "opening")).toBe(true);
+		expect(app.events.some(e => e.state === "recording")).toBe(false);
+		expect(app.uploads).toBe(0);
+	} finally { await app.close(); }
+}, 10000);
+
+test("a failure stopping the microphone reports an error without uploading partial audio", async () => {
+	const app = await startSidecar();
+	try {
+		app.events.length = 0;
+		app.control({ held: true, scenario: "endFailure" });
+		await app.waitFor(() => app.events.some(e => e.state === "recording"));
+		app.control({ held: false });
+		await app.waitFor(() => app.events.some(e => e.state === "error" && e.message === "test microphone failed to stop"));
+		expect(app.uploads).toBe(0);
+	} finally { await app.close(); }
+}, 10000);
+
+test("an old microphone open cannot replace a new recording after a quick release and press", async () => {
+	const app = await startSidecar();
+	try {
+		app.events.length = 0;
+		app.control({ held: true, scenario: "slowOpen" });
+		await app.waitFor(() => app.events.some(e => e.state === "opening"));
+		app.control({ held: false });
+		await app.waitFor(() => app.events.some(e => e.state === "idle"));
+		app.events.length = 0;
+		app.control({ held: true, scenario: "normal" });
+		await app.waitFor(() => app.events.some(e => e.state === "recording"));
+		await Bun.sleep(200);
+		expect(app.events.filter(e => e.ev === "state").at(-1)?.state).toBe("recording");
+		app.control({ held: false });
+		await app.waitFor(() => app.events.some(e => e.state === "idle"));
+		expect(app.uploads).toBe(0);
+	} finally { await app.close(); }
+}, 10000);
+
+test("desktop diagnostics defer synchronous checks while recording", async () => {
+	const app = await startSidecar();
+	try {
+		app.events.length = 0;
+		app.control({ held: true });
+		await app.waitFor(() => app.events.some(e => e.state === "recording"));
+		app.command({ cmd: "diagnose" });
+		await app.waitFor(() => app.events.some(e => e.ev === "error" && String(e.message).includes("then run the checks")));
+		expect(app.events.filter(e => e.ev === "state").at(-1)?.state).toBe("recording");
+		expect(app.events.some(e => e.ev === "diagnostics")).toBe(false);
+		app.control({ held: false });
+		await app.waitFor(() => app.events.some(e => e.state === "idle"));
+		expect(app.uploads).toBe(0);
+	} finally { await app.close(); }
+}, 10000);

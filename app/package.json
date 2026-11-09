@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "benchmark:startup": "bun run ./scripts/benchmark-startup.ts",
     "sidecar": "cd ../ts && bun run build:sidecar",
     "dev": "bun run sidecar && tauri dev",
     "build": "bun run sidecar && tauri build",

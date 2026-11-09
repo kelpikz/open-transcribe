@@ -49,7 +49,7 @@ You do not need an API key. You do not pay for each minute.
 ## Install
 
 1. Install [ffmpeg](https://ffmpeg.org/download.html) and make sure that it is
-   on your `PATH`. The app uses ffmpeg to record from the microphone.
+   on your `PATH`. The app uses it to list microphones and as a recording fallback.
 2. Install the [Codex CLI](https://github.com/openai/codex) and sign in:
 
    ```bash
@@ -63,7 +63,7 @@ You do not need an API key. You do not pay for each minute.
 ## Use it
 
 1. Hold **Ctrl + Shift + Space**.
-2. Wait until the dot in the pill turns red (about 0.6 s). Then speak.
+2. Wait until the dot in the pill turns red. Then speak.
 3. Release the keys. The text is pasted into the window that you work in.
 
 If the desktop or the taskbar is in front, the app copies the text to the
@@ -119,6 +119,10 @@ open-transcribe uses the same route and the same ChatGPT sign-in. The desktop ap
 is a [Tauri](https://tauri.app) shell. A [Bun](https://bun.sh) process runs in
 the background and does the recording, the upload, and the paste. For more
 information, see [ARCHITECTURE.md](ARCHITECTURE.md).
+
+The desktop app records directly through Windows when the selected microphone
+supports it. Other microphones use ffmpeg. Both paths close the microphone when
+you release the shortcut.
 
 ## Command line
 
@@ -219,6 +223,16 @@ To run the tests:
 cd ts
 bun test
 ```
+
+To measure the time until the first audio arrives on Windows, run
+`bun run benchmark:startup` in `app`. The benchmark compares ffmpeg with desktop
+capture over nine recordings each. It discards the audio without uploading it.
+Pass a microphone name as an argument to measure a specific input.
+
+To include the native capture stress test, set
+`OPEN_TRANSCRIBE_TEST_MICROPHONE=1` before running `bun test` in `ts`. This opens the
+microphone for about three seconds and checks that garbage collection does not
+interrupt recording. The test discards the audio without uploading it.
 
 <details>
 <summary><b>Project files</b></summary>

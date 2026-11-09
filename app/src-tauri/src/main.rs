@@ -39,18 +39,24 @@ const PILL_ERROR_SECONDS: u64 = 6;
 struct PillState {
     revision: u64,
     error_visible: bool,
+    activity_visible: bool,
 }
 
 impl PillState {
     fn show_error(&mut self) -> u64 {
         self.revision += 1;
         self.error_visible = true;
+        self.activity_visible = false;
         self.revision
     }
 
-    fn start_activity(&mut self) {
+    /// Only the first active state needs to size, position, and show the window.
+    fn start_activity(&mut self) -> bool {
+        let needs_show = !self.activity_visible;
         self.revision += 1;
         self.error_visible = false;
+        self.activity_visible = true;
+        needs_show
     }
 
     fn dismiss_error(&mut self, revision: u64) -> bool {
@@ -174,13 +180,17 @@ fn on_sidecar_event(app: &AppHandle, event: Value) {
         } else if is_state {
             match event["state"].as_str() {
                 Some("opening") | Some("recording") | Some("transcribing") => {
-                    state.start_activity();
-                    if let Some(window) = app.get_webview_window("overlay") {
-                        let _ = window.set_size(LogicalSize::new(180.0, 48.0));
+                    if state.start_activity() {
+                        if let Some(window) = app.get_webview_window("overlay") {
+                            let _ = window.set_size(LogicalSize::new(180.0, 48.0));
+                        }
+                        show_pill(app);
                     }
-                    show_pill(app);
                 }
-                _ if !state.error_visible => hide_pill(app),
+                _ if !state.error_visible => {
+                    state.activity_visible = false;
+                    hide_pill(app);
+                }
                 _ => {}
             }
         }
@@ -334,5 +344,17 @@ mod tests {
         assert!(!state.dismiss_error(first));
         assert!(state.error_visible);
         assert!(state.dismiss_error(second));
+    }
+
+    #[test]
+    fn active_state_changes_reuse_the_visible_pill() {
+        let mut state = PillState::default();
+        assert!(state.start_activity()); // opening
+        assert!(!state.start_activity()); // recording
+        assert!(!state.start_activity()); // transcribing
+        state.activity_visible = false; // idle
+        assert!(state.start_activity());
+        state.show_error();
+        assert!(state.start_activity()); // Restore the normal size after an error.
     }
 }

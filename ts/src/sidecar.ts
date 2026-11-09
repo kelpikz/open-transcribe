@@ -22,14 +22,13 @@ import { join } from "node:path";
 import { createInterface } from "node:readline";
 
 import {
-	LiveMicrophone,
 	RECORD_CHANNELS,
 	RECORD_SAMPLE_RATE,
 	audioDeviceNames,
-	micInputArgs,
 	pcmPeak,
 	wavFromPcm,
 } from "./audio/index.js";
+import { openRecordingMicrophone, type RecordingMicrophone } from "./desktop/recording.js";
 import { AuthError, ChatGPTAuth, TranscriptionError, transcribeAudio } from "./codex/index.js";
 import * as desktop from "./desktop/win32.js";
 import { checkFfmpeg, checkMicrophone, checkSignIn, microphoneHelp, type Check } from "./diagnostics.js";
@@ -144,7 +143,7 @@ function saveSettings(): void {
 // Events
 // ---------------------------------------------------------------------------
 
-/** "opening": the shortcut is held and the microphone opens (about 0.6 s). */
+/** "opening": the shortcut is held, but no audio has arrived yet. */
 type State = "starting" | "idle" | "opening" | "recording" | "transcribing" | "error";
 /** Why the state is "error", so the page can show the right fix. */
 type ErrorCode = "ffmpeg" | "microphone" | "other";
@@ -271,9 +270,9 @@ function playTone(wav: Uint8Array): void {
 // Microphone
 // ---------------------------------------------------------------------------
 
-let mic: LiveMicrophone | null = null;
-/** The microphone while it opens, so a release or a quit at that time can stop ffmpeg. */
-let opening: LiveMicrophone | null = null;
+let mic: RecordingMicrophone | null = null;
+/** The microphone while it opens, so a release or a quit can stop capture. */
+let opening: RecordingMicrophone | null = null;
 let deviceNames: string[] = [];
 /** The device that the shortcut opens. */
 let currentDevice: string | null = null;
@@ -337,13 +336,17 @@ async function start(): Promise<void> {
 	if (hotkey.usesWin) desktop.maskStartMenu();
 	setState("opening");
 	try {
-		const opened = await LiveMicrophone.open(micInputArgs(currentDevice), {
+		const opened = await openRecordingMicrophone(currentDevice, {
 			onSpawn: (spawned) => {
 				opening = spawned;
 			},
 		});
-		if (press !== pressCount) {
+		if (press !== pressCount || hotkeyPaused || !allDown(hotkey)) {
 			opened.stop();
+			if (press === pressCount) {
+				opening = null;
+				setState("idle");
+			}
 			return;
 		}
 		opening = null;
@@ -376,7 +379,14 @@ function cancel(): void {
 async function stop(): Promise<void> {
 	if (!mic || state !== "recording") return;
 	if (hotkey.usesWin) desktop.maskStartMenu();
-	const pcm = mic.end();
+	let pcm: Buffer;
+	try {
+		pcm = mic.end();
+	} catch (error) {
+		closeMic();
+		setState("error", (error as Error).message, "microphone");
+		return;
+	}
 	closeMic();
 	playTone(STOP_TONE);
 	const heldMs = Date.now() - heldSince;
@@ -471,12 +481,16 @@ function pollHotkey(): void {
 
 const TEST_MS = 3000;
 /** The microphone of a test recording from the diagnostics. */
-let testMic: LiveMicrophone | null = null;
+let testMic: RecordingMicrophone | null = null;
 let testRunning = false;
 
 /** Run the checks and send the results. The sign-in check can use the network. */
 async function diagnose(): Promise<void> {
-	if (!busy()) checkMic();
+	if (busy()) {
+		fail("Wait until the recording and transcription finish, then run the checks.");
+		return;
+	}
+	checkMic();
 	const ffmpeg = checkFfmpeg();
 	const microphone: Check = ffmpeg.status === "pass"
 		? checkMicrophone(deviceNames, currentDevice)
@@ -508,8 +522,7 @@ async function testRecording(): Promise<void> {
 	let step: "open" | "record" | "send" = "open";
 	try {
 		result("opening");
-		const opened = await LiveMicrophone.open(micInputArgs(currentDevice), {
-			prerollMs: 0,
+		const opened = await openRecordingMicrophone(currentDevice, {
 			onSpawn: (spawned) => {
 				testMic = spawned;
 			},
