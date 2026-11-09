@@ -229,8 +229,13 @@ bun test
 
 To measure the time until the first audio arrives on Windows, run
 `bun run benchmark:startup` in `app`. The benchmark compares ffmpeg with desktop
-capture over nine recordings each. It discards the audio without uploading it.
+capture over fifteen recordings each. It discards the audio without uploading it.
 Pass a microphone name as an argument to measure a specific input.
+
+Every pull request also runs `bun run test:startup` from `app` against controlled
+audio, with a fixed startup budget and saved measurements. See
+[Desktop startup performance checks](docs/startup-performance.md) for the limits
+and the difference between CI measurements and microphone hardware timing.
 
 To include the native capture stress test, set
 `OPEN_TRANSCRIBE_TEST_MICROPHONE=1` before running `bun test` in `ts`. This opens the

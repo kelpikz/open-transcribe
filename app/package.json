@@ -5,6 +5,7 @@
   "scripts": {
     "check:release": "bun run ./scripts/check-release.ts",
     "benchmark:startup": "bun run ./scripts/benchmark-startup.ts",
+    "test:startup": "bun test ../ts/tests/startup.test.ts",
     "sidecar": "cd ../ts && bun run build:sidecar",
     "dev": "bun run sidecar && tauri dev",
     "build": "bun run sidecar && tauri build",

@@ -1,6 +1,7 @@
 /** Local startup measurements only. Audio stays in memory and is discarded. */
 import { LiveMicrophone, audioDeviceNames, micInputArgs } from "../../ts/src/audio/index.js";
 import { openRecordingMicrophone } from "../../ts/src/desktop/recording.js";
+import { STARTUP_BUDGET, summarizeStartup } from "./startup-metrics.js";
 
 if (process.platform !== "win32") throw new Error("This benchmark compares the Windows desktop capture paths.");
 const device = process.argv[2] ?? audioDeviceNames()[0];
@@ -11,7 +12,7 @@ const paths = [
 	{ name: "desktop", open: () => openRecordingMicrophone(device) },
 ];
 const results = new Map<string, number[]>();
-for (let trial = 1; trial <= 9; trial++) {
+for (let trial = 1; trial <= STARTUP_BUDGET.sampleCount; trial++) {
 	// Alternate order to avoid giving one path all of the warm device opens.
 	for (const path of trial % 2 === 1 ? paths : [...paths].reverse()) {
 		const started = performance.now();
@@ -35,7 +36,6 @@ for (let trial = 1; trial <= 9; trial++) {
 console.log(JSON.stringify({
 	device,
 	results: Object.fromEntries([...results].map(([name, times]) => {
-		const sorted = [...times].sort((a, b) => a - b);
-		return [name, { times, medianMs: sorted[4], minMs: sorted[0], maxMs: sorted[8] }];
+		return [name, { times, ...summarizeStartup(times) }];
 	})),
 }));
