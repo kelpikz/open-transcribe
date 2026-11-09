@@ -126,8 +126,19 @@ flowchart TD
   folder gives one surface; the files behind it can move.
 - `codex/auth.ts` refreshes the token 60 seconds before it expires. This
   prevents a failure in the middle of a session.
-- ffmpeg does all the audio work: capture, WAV, Opus and the device listing.
-  Nothing else touches the sound hardware.
+- The desktop shortcut uses `desktop/recording.ts` to open a microphone for each
+  press. On 64-bit Windows, `desktop/microphone.ts` uses WinMM to capture
+  24 kHz mono PCM directly, without starting ffmpeg or a DirectShow graph.
+  Recording starts only after the first audio buffer arrives. Releasing the
+  shortcut returns the final partial buffer and closes the device.
+  Queue exhaustion is checked across buffer requeuing and when capture stops.
+  A possible interruption rejects the recording instead of uploading audio
+  with gaps.
+- Native capture requires a unique, exact device-name match shorter than
+  31 UTF-16 code units. A 31-unit WinMM result may be truncated, so names at
+  or above that length use ffmpeg. Ambiguous names and failed native
+  initializations also use ffmpeg.
+  The command line capture paths and device listing also use ffmpeg.
 - The microphone in the Codex Desktop composer uses the upload route. It does
   not use WebRTC.
 - The realtime route returned 404 for a period. It worked again on

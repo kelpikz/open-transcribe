@@ -16,11 +16,14 @@ class TestMicrophone {
 		const mic = new TestMicrophone();
 		active = mic;
 		options.onSpawn?.(mic);
+		if (scenario === "slowOpen") await Bun.sleep(150);
+		if (scenario === "releaseOnReady") held = false;
 		return mic;
 	}
 
 	begin() {}
 	end() {
+		if (scenario === "endFailure") throw new Error("test microphone failed to stop");
 		const pcm = Buffer.alloc(48_000);
 		if (scenario !== "silence") pcm.writeInt16LE(2000, 0);
 		return pcm;
@@ -43,6 +46,9 @@ mock.module("../../src/audio/index.js", () => ({
 	LiveMicrophone: TestMicrophone,
 	audioDeviceNames: () => ["Test microphone"],
 	micInputArgs: () => [],
+}));
+mock.module("../../src/desktop/recording.js", () => ({
+	openRecordingMicrophone: (_device: string, options: { onSpawn?: (mic: TestMicrophone) => void }) => TestMicrophone.open([], options),
 }));
 mock.module("../../src/desktop/win32.js", () => ({
 	isKeyDown: () => held,

@@ -17,6 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
         with:
@@ -26,8 +28,22 @@ jobs:
         working-directory: ts
       - run: bun install
         working-directory: app
+      - name: Check desktop release metadata
+        run: bun run check:release
+        working-directory: app
+      - name: Check TypeScript types
+        run: bun run typecheck
+        working-directory: ts
+      - name: Test recording behavior
+        run: bun test
+        working-directory: ts
+        env:
+          OPEN_TRANSCRIBE_TEST_MICROPHONE: "0"
       - run: bun run build
         working-directory: app
+      - name: Test the desktop shell
+        run: cargo test --release --locked
+        working-directory: app/src-tauri
 
       - name: Install
         run: |

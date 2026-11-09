@@ -1,0 +1,36 @@
+name: desktop-startup
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-startup:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+        working-directory: ts
+      - name: Enforce desktop startup budget
+        run: bun run test:startup
+        working-directory: app
+        env:
+          OPEN_TRANSCRIBE_TEST_MICROPHONE: "0"
+          OPEN_TRANSCRIBE_STARTUP_REPORT: ${{ github.workspace }}/desktop-startup-results.json
+      - name: Save startup measurements
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-startup-results
+          path: desktop-startup-results.json
+          if-no-files-found: error
+          retention-days: 30
