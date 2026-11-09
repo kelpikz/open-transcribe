@@ -131,10 +131,13 @@ flowchart TD
   24 kHz mono PCM directly, without starting ffmpeg or a DirectShow graph.
   Recording starts only after the first audio buffer arrives. Releasing the
   shortcut returns the final partial buffer and closes the device.
-  If the input buffers fill before they can be drained, the recording is
-  rejected instead of uploading audio with gaps.
-- Native capture requires a unique, exact device-name match. Truncated names,
-  ambiguous names, and devices that fail native initialization use ffmpeg.
+  Queue exhaustion is checked across buffer requeuing and when capture stops.
+  A possible interruption rejects the recording instead of uploading audio
+  with gaps.
+- Native capture requires a unique, exact device-name match shorter than
+  31 UTF-16 code units. A 31-unit WinMM result may be truncated, so names at
+  or above that length use ffmpeg. Ambiguous names and failed native
+  initializations also use ffmpeg.
   The command line capture paths and device listing also use ffmpeg.
 - The microphone in the Codex Desktop composer uses the upload route. It does
   not use WebRTC.

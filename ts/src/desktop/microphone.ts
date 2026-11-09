@@ -12,7 +12,22 @@ const BUFFER_BYTES = RECORD_SAMPLE_RATE * RECORD_CHANNELS * 2 * BUFFER_MS / 1000
 const BUFFER_COUNT = 16;
 const STALL_MS = 2000;
 
-function loadWaveInput() {
+/** Operations needed by the recorder, independent of Bun's FFI loader types. */
+export interface WaveInput {
+	allocate(bytes: number): Pointer;
+	free(allocation: Pointer): void;
+	waveInGetNumDevs(): number;
+	waveInGetDevCapsW(id: number, caps: Buffer, size: number): number;
+	waveInOpen(result: Buffer, id: number, format: Buffer, callback: number, instance: number, flags: number): number;
+	waveInPrepareHeader(handle: Pointer, header: Buffer, size: number): number;
+	waveInAddBuffer(handle: Pointer, header: Buffer, size: number): number;
+	waveInStart(handle: Pointer): number;
+	waveInReset(handle: Pointer): number;
+	waveInUnprepareHeader(handle: Pointer, header: Buffer, size: number): number;
+	waveInClose(handle: Pointer): number;
+}
+
+function loadWaveInput(): WaveInput {
 	const { u32, u64, ptr: pointer } = FFIType;
 	const library = dlopen("winmm.dll", {
 		waveInGetNumDevs: { args: [], returns: u32 },
@@ -31,8 +46,9 @@ function loadWaveInput() {
 		HeapFree: { args: [pointer, u32, pointer], returns: u32 },
 	});
 	const heap = memory.symbols.GetProcessHeap();
-	return {
+	const input = {
 		...library.symbols,
+		// Keep both DLLs alive for as long as this driver is used.
 		libraries: [library, memory],
 		allocate(bytes: number): Pointer {
 			const allocation = memory.symbols.HeapAlloc(heap, 8, bytes); // HEAP_ZERO_MEMORY
@@ -41,9 +57,9 @@ function loadWaveInput() {
 		},
 		free(allocation: Pointer): void { memory.symbols.HeapFree(heap, 0, allocation); },
 	};
+	return input;
 }
 
-export type WaveInput = ReturnType<typeof loadWaveInput>;
 let waveInput: WaveInput | undefined;
 
 interface AudioBuffer {
@@ -61,6 +77,9 @@ function check(code: number, operation: string): void {
 
 /** Match exact names only. Truncated or ambiguous WinMM names use ffmpeg instead. */
 function deviceId(name: string, wave: WaveInput): number | null {
+	// WAVEINCAPSW has 31 UTF-16 code units plus a terminator. A name that
+	// fills that field cannot be distinguished from a longer truncated name.
+	if (name.length >= 31) return null;
 	const matches: number[] = [];
 	for (let id = 0; id < wave.waveInGetNumDevs(); id++) {
 		const caps = Buffer.alloc(80); // WAVEINCAPSW
@@ -76,6 +95,7 @@ export class WindowsMicrophone {
 	private memory: Pointer | null = null;
 	private readonly buffers: AudioBuffer[] = [];
 	private nextBuffer = 0;
+	private lastQueued: AudioBuffer | null = null;
 	private chunks: Buffer[] = [];
 	private recording = false;
 	private peak = 0;
@@ -135,9 +155,10 @@ export class WindowsMicrophone {
 			const data = Buffer.from(toArrayBuffer(this.memory, stride * i + HEADER_BYTES, BUFFER_BYTES));
 			header.writeBigUInt64LE(BigInt(ptr(data)), 0);
 			header.writeUInt32LE(data.length, 8);
-			this.buffers.push({ header, data });
+			const buffer = { header, data };
+			this.buffers.push(buffer);
 			check(this.wave.waveInPrepareHeader(this.handle, header, HEADER_BYTES), "prepare");
-			check(this.wave.waveInAddBuffer(this.handle, header, HEADER_BYTES), "queue");
+			this.queueBuffer(buffer);
 		}
 		check(this.wave.waveInStart(this.handle), "start");
 		this.lastAudio = performance.now();
@@ -156,7 +177,8 @@ export class WindowsMicrophone {
 		if (this.handle === null) return;
 		if (requeue) this.checkBufferCapacity();
 		for (let i = 0; i < this.buffers.length; i++) {
-			const { header, data } = this.buffers[this.nextBuffer]!;
+			const buffer = this.buffers[this.nextBuffer]!;
+			const { header, data } = buffer;
 			if ((header.readUInt32LE(FLAGS_OFFSET) & WHDR_DONE) === 0) break;
 			const bytes = Math.min(header.readUInt32LE(12), data.length) & ~1;
 			if (bytes > 0) {
@@ -172,18 +194,32 @@ export class WindowsMicrophone {
 				this.resolveReady();
 			}
 			this.nextBuffer = (this.nextBuffer + 1) % this.buffers.length;
-			if (requeue) {
-				header.writeUInt32LE(0, 12);
-				check(this.wave.waveInAddBuffer(this.handle, header, HEADER_BYTES), "queue");
-			}
+			if (requeue) this.queueBuffer(buffer);
 		}
 	}
 
-	/** A full returned ring means Windows may already have discarded incoming audio. */
-	private checkBufferCapacity(): void {
-		if (this.buffers.length > 0 && this.buffers.every(({ header }) => (header.readUInt32LE(FLAGS_OFFSET) & WHDR_DONE) !== 0)) {
-			throw new Error("Recording was interrupted. Please try again.");
+	private queueBuffer(buffer: AudioBuffer): void {
+		if (this.handle === null) throw new Error("The microphone is closed.");
+		const previousTail = this.lastQueued;
+		this.checkBufferCapacity(previousTail);
+		buffer.header.writeUInt32LE(0, 12);
+		check(this.wave.waveInAddBuffer(this.handle, buffer.header, HEADER_BYTES), "queue");
+		// The driver keeps capturing while JS copies audio and while the FFI call
+		// runs. Check the old tail before replacing it, so requeue cannot hide a gap.
+		this.checkBufferCapacity(previousTail);
+		this.lastQueued = buffer;
+	}
+
+	/** If the most recently queued header is done, the entire queue may be empty. */
+	private checkBufferCapacity(tail = this.lastQueued): void {
+		if (tail !== null && (tail.header.readUInt32LE(FLAGS_OFFSET) & WHDR_DONE) !== 0) {
+			this.interrupted();
 		}
+	}
+
+	private interrupted(): never {
+		this.failure = "Recording was interrupted. Please try again.";
+		throw new Error(this.failure);
 	}
 
 	begin(): void { this.recording = true; }
@@ -192,18 +228,24 @@ export class WindowsMicrophone {
 
 	/** Reset returns even the final partial buffer, preserving the end of the clip. */
 	end(): Buffer {
-		if (this.failure !== null) throw new Error(this.failure);
-		if (this.handle !== null) {
-			// Check before reset: reset itself marks all queued buffers as done.
-			this.checkBufferCapacity();
-			check(this.wave.waveInReset(this.handle), "stop");
-			this.readBuffers(false);
+		try {
+			if (this.failure !== null) throw new Error(this.failure);
+			if (this.handle !== null) {
+				this.checkBufferCapacity();
+				check(this.wave.waveInReset(this.handle), "stop");
+				// Reset marks every queued header done, including partial buffers.
+				// A full tail means capture may have exhausted the queue during reset.
+				if (this.lastQueued !== null && this.lastQueued.header.readUInt32LE(12) >= this.lastQueued.data.length) {
+					this.interrupted();
+				}
+				this.readBuffers(false);
+			}
+			return Buffer.concat(this.chunks);
+		} finally {
+			this.stop();
+			this.recording = false;
+			this.chunks = [];
 		}
-		this.stop();
-		this.recording = false;
-		const pcm = Buffer.concat(this.chunks);
-		this.chunks = [];
-		return pcm;
 	}
 
 	stop(): void {
@@ -219,6 +261,7 @@ export class WindowsMicrophone {
 			}
 		}
 		if (this.wave.waveInClose(handle) !== 0) released = false;
+		this.lastQueued = null;
 		if (this.memory !== null) {
 			if (released) this.wave.free(this.memory);
 			else retainedBuffers.add(this.memory);

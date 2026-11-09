@@ -25,13 +25,13 @@ export function driver(names = ["Test microphone"], firstAudioDelayMs = 0) {
 	};
 	const api = {
 		allocate: (bytes: number) => { memory = Buffer.alloc(bytes); return ptr(memory); },
-		free: () => { calls.push("free"); memory = undefined; },
+		free: (_allocation: Pointer) => { calls.push("free"); memory = undefined; },
 		waveInGetNumDevs: () => names.length,
-		waveInGetDevCapsW: (id: number, caps: Buffer) => {
+		waveInGetDevCapsW: (id: number, caps: Buffer, _size: number) => {
 			Buffer.from(`${names[id]!.slice(0, 31)}\0`, "utf16le").copy(caps, 8);
 			return 0;
 		},
-		waveInOpen: (result: Buffer, id: number, input: Buffer) => {
+		waveInOpen: (result: Buffer, id: number, input: Buffer, _callback: number, _instance: number, _flags: number) => {
 			calls.push("open");
 			if (fail === "open") return 32;
 			hasFirstAudio = false;
@@ -40,19 +40,19 @@ export function driver(names = ["Test microphone"], firstAudioDelayMs = 0) {
 			result.writeBigUInt64LE(1n);
 			return 0;
 		},
-		waveInPrepareHeader: (_handle: unknown, header: Buffer) => {
+		waveInPrepareHeader: (_handle: Pointer, header: Buffer, _size: number) => {
 			if (fail === "prepare" && prepared.size === 2) return 7;
 			header.writeUInt32LE(2, 24);
 			prepared.add(header);
 			return 0;
 		},
-		waveInAddBuffer: (_handle: unknown, header: Buffer) => {
+		waveInAddBuffer: (_handle: Pointer, header: Buffer, _size: number) => {
 			if (fail === "queue") return 6;
 			header.writeUInt32LE(18, 24); // WHDR_PREPARED | WHDR_INQUEUE
 			queued.push(header);
 			return 0;
 		},
-		waveInStart: () => {
+		waveInStart: (_handle: Pointer) => {
 			calls.push("start");
 			if (fail === "start") return 6;
 			const deliver = () => { queue(1000); hasFirstAudio = true; };
@@ -65,7 +65,7 @@ export function driver(names = ["Test microphone"], firstAudioDelayMs = 0) {
 			}
 			return 0;
 		},
-		waveInReset: () => {
+		waveInReset: (_handle: Pointer) => {
 			clearTimeout(firstAudio);
 			calls.push("reset");
 			// Return the final partial buffer, followed by empty queued buffers.
@@ -73,17 +73,17 @@ export function driver(names = ["Test microphone"], firstAudioDelayMs = 0) {
 			while (queued.length > 0) queue(0, 0);
 			return 0;
 		},
-		waveInUnprepareHeader: (_handle: unknown, header: Buffer) => {
+		waveInUnprepareHeader: (_handle: Pointer, header: Buffer, _size: number) => {
 			if (!prepared.delete(header)) throw new Error("Unpreparing an unknown input buffer");
 			header.writeUInt32LE(0, 24);
 			return 0;
 		},
-		waveInClose: () => {
+		waveInClose: (_handle: Pointer) => {
 			calls.push("close");
 			if (prepared.size !== 0) throw new Error("Closing input with prepared buffers");
 			return 0;
 		},
-	} as unknown as WaveInput;
+	} satisfies WaveInput;
 	return {
 		api, calls, prepared, queue,
 		get format() { return format; },

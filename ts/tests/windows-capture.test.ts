@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { WindowsMicrophone } from "../src/desktop/microphone.js";
+import { WindowsMicrophone, type WaveInput } from "../src/desktop/microphone.js";
 import { audioDeviceNames } from "../src/audio/devices.js";
 import { driver } from "./fixtures/wave-input.js";
 
@@ -39,6 +39,22 @@ test("native capture uses the selected device and refuses ambiguous or truncated
 	expect(await WindowsMicrophone.open("Missing microphone", {}, wave.api)).toBeNull();
 });
 
+test("a truncated prefix cannot select a different native microphone", async () => {
+	const longName = "A microphone name that is longer than thirty one characters";
+	const selected = longName.slice(0, 31);
+	for (const nativeName of [longName, selected]) {
+		const wave = driver([nativeName]);
+		const mic = await WindowsMicrophone.open(selected, {}, wave.api);
+		try {
+			expect(mic).toBeNull();
+			expect(wave.calls).toEqual([]);
+		} finally { mic?.stop(); }
+	}
+	const shortName = selected.slice(0, 30);
+	const mic = await WindowsMicrophone.open(shortName, {}, driver([shortName]).api);
+	try { expect(mic).not.toBeNull(); } finally { mic?.stop(); }
+});
+
 test("recorded audio stays intact when the driver recycles its entire buffer ring", async () => {
 	const wave = driver();
 	const mic = await WindowsMicrophone.open("Test microphone", {}, wave.api);
@@ -73,6 +89,61 @@ test("release before the next audio poll still rejects an exhausted ring", async
 		mic!.begin();
 		for (let i = 0; i < 16; i++) wave.queue(2000);
 		expect(() => mic!.end()).toThrow("Recording was interrupted");
+	} finally { mic!.stop(); }
+});
+
+test("starvation during draining is detected after the first buffer is requeued", async () => {
+	const wave = driver();
+	let armed = false;
+	let droppedBuffers = 0;
+	const input: WaveInput = {
+		...wave.api,
+		waveInAddBuffer(...args) {
+			if (armed) {
+				armed = false;
+				wave.queue(2222); // Capture finishes the last queued buffer during this call.
+				try { wave.queue(3333); } catch { droppedBuffers++; }
+			}
+			return wave.api.waveInAddBuffer(...args);
+		},
+	};
+	const mic = await WindowsMicrophone.open("Test microphone", {}, input);
+	try {
+		mic!.begin();
+		for (let i = 0; i < 15; i++) wave.queue(1234);
+		armed = true;
+		await Bun.sleep(20);
+		expect(droppedBuffers).toBe(1);
+		expect(mic!.failureMessage()).toContain("Recording was interrupted");
+		expect(() => mic!.end()).toThrow("Recording was interrupted");
+		expect(wave.calls.filter(call => call === "close").length).toBe(1);
+	} finally { mic!.stop(); }
+});
+
+test("starvation during release is detected before final audio is returned", async () => {
+	const wave = driver();
+	let armed = false;
+	let droppedBuffers = 0;
+	const input: WaveInput = {
+		...wave.api,
+		waveInReset(handle) {
+			if (armed) {
+				armed = false;
+				wave.queue(2222);
+				try { wave.queue(3333); } catch { droppedBuffers++; }
+			}
+			return wave.api.waveInReset(handle);
+		},
+	};
+	const mic = await WindowsMicrophone.open("Test microphone", {}, input);
+	try {
+		mic!.begin();
+		for (let i = 0; i < 15; i++) wave.queue(1234);
+		armed = true;
+		expect(() => mic!.end()).toThrow("Recording was interrupted");
+		expect(droppedBuffers).toBe(1);
+		expect(mic!.failureMessage()).toContain("Recording was interrupted");
+		expect(wave.calls.filter(call => call === "close").length).toBe(1);
 	} finally { mic!.stop(); }
 });
 
